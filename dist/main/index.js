@@ -1708,8 +1708,7 @@ function buildOptions(dir) {
         const params = [
             (0,core.getInput)('key', { required: true }),
             (0,core.getInput)('secret', { required: true })
-        ];
-        params.concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]);
+        ].concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]);
         if ((0,core.isDebug)()) {
             params.push('--debug');
         }
