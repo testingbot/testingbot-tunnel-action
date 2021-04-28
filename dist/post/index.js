@@ -1775,6 +1775,7 @@ function startTunnel() {
         const containerId = (yield execWithReturn('docker', [
             'run',
             '--network=host',
+            '--detach',
             '--rm',
             '-v',
             `${dir}:${TMP_DIR_CONTAINER}`,

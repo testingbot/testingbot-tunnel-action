@@ -93,6 +93,7 @@ export async function startTunnel(): Promise<string> {
             [
                 'run',
                 '--network=host',
+                '--detach',
                 '--rm',
                 '-v',
                 `${dir}:${TMP_DIR_CONTAINER}`,
