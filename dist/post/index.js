@@ -1701,7 +1701,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 
-const TMP_DIR_CONTAINER = '/tmp';
+const TMP_DIR_CONTAINER = '/home/bot';
 function buildOptions() {
     return __awaiter(this, void 0, void 0, function* () {
         const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log');

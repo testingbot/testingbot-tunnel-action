@@ -4,7 +4,7 @@ import {tmpdir} from 'os'
 import {getInput, info, debug, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 
-const TMP_DIR_CONTAINER = '/tmp'
+const TMP_DIR_CONTAINER = '/home/bot'
 
 async function buildOptions(): Promise<string[]> {
     const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
