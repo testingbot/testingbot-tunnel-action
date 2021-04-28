@@ -8921,10 +8921,17 @@ function uploadLog() {
         info('Uploading artifacts');
         const artifactClient = create();
         const artifactName = 'testingbot-tunnel.log';
-        const uploadResult = yield artifactClient.uploadArtifact(artifactName, [join(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
-            continueOnError: true
-        });
-        info(JSON.stringify(uploadResult));
+        const debugResponse = yield execWithReturn('ls', [TMP_DIR_HOST]);
+        info(debugResponse);
+        try {
+            const uploadResult = yield artifactClient.uploadArtifact(artifactName, [join(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
+                continueOnError: true
+            });
+            info(JSON.stringify(uploadResult));
+        }
+        catch (err) {
+            warning(err);
+        }
     });
 }
 function startTunnel() {

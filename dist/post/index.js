@@ -8921,10 +8921,17 @@ function uploadLog() {
         (0,core.info)('Uploading artifacts');
         const artifactClient = (0,artifact_client/* create */.U)();
         const artifactName = 'testingbot-tunnel.log';
-        const uploadResult = yield artifactClient.uploadArtifact(artifactName, [(0,external_path_.join)(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
-            continueOnError: true
-        });
-        (0,core.info)(JSON.stringify(uploadResult));
+        const debugResponse = yield execWithReturn('ls', [TMP_DIR_HOST]);
+        (0,core.info)(debugResponse);
+        try {
+            const uploadResult = yield artifactClient.uploadArtifact(artifactName, [(0,external_path_.join)(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
+                continueOnError: true
+            });
+            (0,core.info)(JSON.stringify(uploadResult));
+        }
+        catch (err) {
+            (0,core.warning)(err);
+        }
     });
 }
 function startTunnel() {
@@ -8986,6 +8993,7 @@ function run() {
             (0,core.warning)('No active TestingBot Tunnel available.');
             return;
         }
+        yield uploadLog();
         yield stopTunnel(containerId);
         yield uploadLog();
     });

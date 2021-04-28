@@ -110,15 +110,22 @@ export async function uploadLog(): Promise<void> {
     const artifactClient = create()
     const artifactName = 'testingbot-tunnel.log'
 
-    const uploadResult = await artifactClient.uploadArtifact(
-        artifactName,
-        [join(TMP_DIR_HOST, 'tb-tunnel.log')],
-        TMP_DIR_HOST,
-        {
-            continueOnError: true
-        }
-    )
-    info(JSON.stringify(uploadResult))
+    const debugResponse = await execWithReturn('ls', [TMP_DIR_HOST])
+    info(debugResponse)
+
+    try {
+        const uploadResult = await artifactClient.uploadArtifact(
+            artifactName,
+            [join(TMP_DIR_HOST, 'tb-tunnel.log')],
+            TMP_DIR_HOST,
+            {
+                continueOnError: true
+            }
+        )
+        info(JSON.stringify(uploadResult))
+    } catch (err) {
+        warning(err)
+    }
 }
 
 export async function startTunnel(): Promise<string> {

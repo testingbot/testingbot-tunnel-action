@@ -8,6 +8,7 @@ async function run(): Promise<void> {
         return
     }
 
+    await uploadLog()
     await stopTunnel(containerId)
     await uploadLog()
 }
