@@ -29,7 +29,9 @@ async function buildOptions(): Promise<string[]> {
         const input = getInput(optionMapping.actionOption, {
             required: optionMapping.required
         })
-
+        if (input === '') {
+            continue
+        }
         if (optionMapping.flag) {
             params.push(`--${optionMapping.dockerOption}`)
         } else {
