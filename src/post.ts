@@ -1,5 +1,5 @@
 import {getState, warning, setFailed} from '@actions/core'
-import {stopTunnel} from './container'
+import {stopTunnel, uploadLog} from './container'
 
 async function run(): Promise<void> {
     const containerId = getState('containerId')
@@ -9,6 +9,7 @@ async function run(): Promise<void> {
     }
 
     await stopTunnel(containerId)
+    await uploadLog()
 }
 
 // eslint-disable-next-line github/no-then

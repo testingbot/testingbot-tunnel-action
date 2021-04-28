@@ -1,11 +1,13 @@
-import {promises, watch} from 'fs'
+import {promises, watch, mkdtempSync} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
+import {create} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
+const TMP_DIR_HOST = mkdtempSync(join(tmpdir(), `tb-tunnel-action`))
 
 type OptionMapping = {
     actionOption: string
@@ -46,7 +48,7 @@ async function buildOptions(): Promise<string[]> {
     return params
 }
 
-async function readyPoller(dir: string): Promise<unknown> {
+async function readyPoller(): Promise<unknown> {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             watcher.close()
@@ -57,7 +59,7 @@ async function readyPoller(dir: string): Promise<unknown> {
             )
         }, 60 * 1000)
 
-        const watcher = watch(dir, (eventType, fileName) => {
+        const watcher = watch(TMP_DIR_HOST, (eventType, fileName) => {
             if (fileName !== 'tb.ready') {
                 return
             }
@@ -103,9 +105,23 @@ export async function stopTunnel(containerId: string): Promise<void> {
     info('Finished stopping TestingBot Tunnel')
 }
 
-export async function startTunnel(): Promise<string> {
-    const dir = await promises.mkdtemp(join(tmpdir(), `tb-tunnel-action`))
+export async function uploadLog(): Promise<void> {
+    info('Uploading artifacts')
+    const artifactClient = create()
+    const artifactName = 'testingbot-tunnel.log'
 
+    const uploadResult = await artifactClient.uploadArtifact(
+        artifactName,
+        [join(TMP_DIR_HOST, 'tb-tunnel.log')],
+        TMP_DIR_HOST,
+        {
+            continueOnError: true
+        }
+    )
+    info(JSON.stringify(uploadResult))
+}
+
+export async function startTunnel(): Promise<string> {
     const containerVersion = getInput('tbVersion')
     const containerName = `testingbot/tunnel:${containerVersion}`
     await exec('docker', ['pull', containerName])
@@ -119,7 +135,7 @@ export async function startTunnel(): Promise<string> {
                 '--detach',
                 '--rm',
                 '-v',
-                `${dir}:${TMP_DIR_CONTAINER}`,
+                `${TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
                 containerName
             ].concat(await buildOptions())
         )
@@ -127,7 +143,7 @@ export async function startTunnel(): Promise<string> {
 
     let hasError = false
     try {
-        await readyPoller(dir)
+        await readyPoller()
     } catch (err) {
         hasError = true
         await stopTunnel(containerId)
@@ -135,9 +151,12 @@ export async function startTunnel(): Promise<string> {
     } finally {
         // cleanup
         try {
-            const log = await promises.readFile(join(dir, 'tb-tunnel.log'), {
-                encoding: 'utf-8'
-            })
+            const log = await promises.readFile(
+                join(TMP_DIR_HOST, 'tb-tunnel.log'),
+                {
+                    encoding: 'utf-8'
+                }
+            )
 
             ;(hasError ? warning : info)(`TestingBot Tunnel log: ${log}`)
         } catch (errLog) {
