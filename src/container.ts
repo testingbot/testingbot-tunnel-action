@@ -134,19 +134,14 @@ export async function startTunnel(): Promise<string> {
         throw err
     } finally {
         // cleanup
-        if (hasError || isDebug()) {
-            try {
-                const log = await promises.readFile(
-                    join(dir, 'tb-tunnel.log'),
-                    {
-                        encoding: 'utf-8'
-                    }
-                )
+        try {
+            const log = await promises.readFile(join(dir, 'tb-tunnel.log'), {
+                encoding: 'utf-8'
+            })
 
-                ;(hasError ? warning : debug)(`TestingBot Tunnel log: ${log}`)
-            } catch {
-                //
-            }
+            ;(hasError ? warning : debug)(`TestingBot Tunnel log: ${log}`)
+        } catch {
+            //
         }
     }
 
