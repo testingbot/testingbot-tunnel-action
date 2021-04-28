@@ -1723,8 +1723,9 @@ function readyPoller(dir) {
                 watcher.close();
                 reject(new Error('Timeout Error: waited 60 seconds for tunnel to start.'));
             }, 60 * 1000);
-            const watcher = watch(dir, (eventType, filename) => {
-                if (filename !== 'tb.ready') {
+            const watcher = watch(dir, (eventType, fileName) => {
+                info(fileName);
+                if (fileName !== 'tb.ready') {
                     return;
                 }
                 clearTimeout(timeout);
@@ -1771,8 +1772,14 @@ function startTunnel() {
         const containerVersion = getInput('tbVersion');
         const containerName = `testingbot/tunnel:${containerVersion}`;
         yield exec('docker', ['pull', containerName]);
-        const containerId = (yield execWithReturn('docker', ['run', '--network=host', '--detach', '--rm', '-v',
-            `${dir}:${TMP_DIR_CONTAINER}`, containerName].concat(yield buildOptions()))).trim();
+        const containerId = (yield execWithReturn('docker', [
+            'run',
+            '--network=host',
+            '--rm',
+            '-v',
+            `${dir}:${TMP_DIR_CONTAINER}`,
+            containerName
+        ].concat(yield buildOptions()))).trim();
         let hasError = false;
         try {
             yield readyPoller(dir);

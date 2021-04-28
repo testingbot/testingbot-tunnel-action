@@ -33,8 +33,9 @@ async function readyPoller(dir: string): Promise<unknown> {
             )
         }, 60 * 1000)
 
-        const watcher = watch(dir, (eventType, filename) => {
-            if (filename !== 'tb.ready') {
+        const watcher = watch(dir, (eventType, fileName) => {
+            info(fileName)
+            if (fileName !== 'tb.ready') {
                 return
             }
             clearTimeout(timeout)
@@ -92,7 +93,6 @@ export async function startTunnel(): Promise<string> {
             [
                 'run',
                 '--network=host',
-                '--detach',
                 '--rm',
                 '-v',
                 `${dir}:${TMP_DIR_CONTAINER}`,
