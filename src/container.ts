@@ -1,23 +1,19 @@
-import {promises} from 'fs'
+import {promises, watch} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, debug, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
-import {watch} from 'fs'
 
 async function buildOptions(dir: string): Promise<string[]> {
-	const LOG_FILE = join(dir, 'tb-tunnel.log')
-	const READY_FILE = join(dir, 'tb.ready')
+    const LOG_FILE = join(dir, 'tb-tunnel.log')
+    const READY_FILE = join(dir, 'tb.ready')
 
     const params = [
-		getInput('TB_KEY', { required: true }),
-		getInput('TB_SECRET', { required: true })
-	]
+        getInput('TB_KEY', {required: true}),
+        getInput('TB_SECRET', {required: true})
+    ]
 
-	params.concat([
-        `--logfile=${LOG_FILE}`,
-        `--readyfile=${READY_FILE}`
-    ])
+    params.concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`])
 
     if (isDebug()) {
         params.push('--debug')
@@ -64,7 +60,7 @@ async function execWithReturn(
 }
 
 export async function stopTunnel(containerId: string): Promise<void> {
-	info(`Stopping TestingBot Tunnel ${containerId}...`)
+    info(`Stopping TestingBot Tunnel ${containerId}...`)
     const running =
         (
             await execWithReturn('docker', [
@@ -84,37 +80,31 @@ export async function stopTunnel(containerId: string): Promise<void> {
 }
 
 export async function startTunnel(): Promise<string> {
-	const dir = await promises.mkdtemp(
-		join(tmpdir(), `tb-tunnel-action`)
-	)
+    const dir = await promises.mkdtemp(join(tmpdir(), `tb-tunnel-action`))
 
     const containerVersion = getInput('tbVersion')
     const containerName = `testingbot/tunnel:${containerVersion}`
     await exec('docker', ['pull', containerName])
 
-	const containerId = (
+    const containerId = (
         await execWithReturn(
             'docker',
-            [
-                'run',
-                '--network=host',
-                '--detach',
-                '--rm',
-                containerName
-            ].concat(await buildOptions(dir))
+            ['run', '--network=host', '--detach', '--rm', containerName].concat(
+                await buildOptions(dir)
+            )
         )
     ).trim()
 
-	let hasError = false
-	try {
-		await readyPoller(dir)
-	} catch (err) {
-		hasError = true
-		await stopTunnel(containerId)
-		throw err
-	} finally {
-		// cleanup
-		if (hasError || isDebug()) {
+    let hasError = false
+    try {
+        await readyPoller(dir)
+    } catch (err) {
+        hasError = true
+        await stopTunnel(containerId)
+        throw err
+    } finally {
+        // cleanup
+        if (hasError || isDebug()) {
             try {
                 const log = await promises.readFile(
                     join(dir, 'tb-tunnel.log'),
@@ -128,8 +118,8 @@ export async function startTunnel(): Promise<string> {
                 //
             }
         }
-	}
+    }
 
-	info('TestingBot Tunnel is ready')
-	return containerId
+    info('TestingBot Tunnel is ready')
+    return containerId
 }

@@ -23,6 +23,9 @@ inputs:
         description: Do not retry if this amount of minutes has passed since starting.
         required: false
         default: '10'
+    tunnelIdentifier:
+        description: A unique identifier for the Tunnel
+        required: false
 runs:
     using: 'node12'
     main: 'dist/main/index.js'

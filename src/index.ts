@@ -1,5 +1,5 @@
-import { getInput, saveState, setFailed, warning } from '@actions/core'
-import { startTunnel } from './container'
+import {getInput, saveState, setFailed, warning} from '@actions/core'
+import {startTunnel} from './container'
 
 const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(a => a * 1000)
 
