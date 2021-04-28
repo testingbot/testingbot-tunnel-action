@@ -1706,8 +1706,8 @@ function buildOptions(dir) {
         const LOG_FILE = join(dir, 'tb-tunnel.log');
         const READY_FILE = join(dir, 'tb.ready');
         const params = [
-            getInput('TB_KEY', { required: true }),
-            getInput('TB_SECRET', { required: true })
+            getInput('key', { required: true }),
+            getInput('secret', { required: true })
         ];
         params.concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]);
         if (isDebug()) {

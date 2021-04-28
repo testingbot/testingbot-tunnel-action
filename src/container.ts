@@ -9,8 +9,8 @@ async function buildOptions(dir: string): Promise<string[]> {
     const READY_FILE = join(dir, 'tb.ready')
 
     const params = [
-        getInput('TB_KEY', {required: true}),
-        getInput('TB_SECRET', {required: true})
+        getInput('key', {required: true}),
+        getInput('secret', {required: true})
     ]
 
     params.concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`])
