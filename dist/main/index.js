@@ -1574,105 +1574,9 @@ function copyFile(srcFile, destFile, force) {
 
 /***/ }),
 
-/***/ 357:
-/***/ ((module) => {
+/***/ 562:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
-module.exports = require("assert");;
-
-/***/ }),
-
-/***/ 129:
-/***/ ((module) => {
-
-module.exports = require("child_process");;
-
-/***/ }),
-
-/***/ 614:
-/***/ ((module) => {
-
-module.exports = require("events");;
-
-/***/ }),
-
-/***/ 747:
-/***/ ((module) => {
-
-module.exports = require("fs");;
-
-/***/ }),
-
-/***/ 87:
-/***/ ((module) => {
-
-module.exports = require("os");;
-
-/***/ }),
-
-/***/ 622:
-/***/ ((module) => {
-
-module.exports = require("path");;
-
-/***/ }),
-
-/***/ 669:
-/***/ ((module) => {
-
-module.exports = require("util");;
-
-/***/ })
-
-/******/ 	});
-/************************************************************************/
-/******/ 	// The module cache
-/******/ 	var __webpack_module_cache__ = {};
-/******/ 	
-/******/ 	// The require function
-/******/ 	function __nccwpck_require__(moduleId) {
-/******/ 		// Check if module is in cache
-/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
-/******/ 		if (cachedModule !== undefined) {
-/******/ 			return cachedModule.exports;
-/******/ 		}
-/******/ 		// Create a new module (and put it into the cache)
-/******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			// no module.id needed
-/******/ 			// no module.loaded needed
-/******/ 			exports: {}
-/******/ 		};
-/******/ 	
-/******/ 		// Execute the module function
-/******/ 		var threw = true;
-/******/ 		try {
-/******/ 			__webpack_modules__[moduleId].call(module.exports, module, module.exports, __nccwpck_require__);
-/******/ 			threw = false;
-/******/ 		} finally {
-/******/ 			if(threw) delete __webpack_module_cache__[moduleId];
-/******/ 		}
-/******/ 	
-/******/ 		// Return the exports of the module
-/******/ 		return module.exports;
-/******/ 	}
-/******/ 	
-/************************************************************************/
-/******/ 	/* webpack/runtime/make namespace object */
-/******/ 	(() => {
-/******/ 		// define __esModule on exports
-/******/ 		__nccwpck_require__.r = (exports) => {
-/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
-/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
-/******/ 			}
-/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
-/******/ 		};
-/******/ 	})();
-/******/ 	
-/******/ 	/* webpack/runtime/compat */
-/******/ 	
-/******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";/************************************************************************/
-var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
-(() => {
 // ESM COMPAT FLAG
 __nccwpck_require__.r(__webpack_exports__);
 
@@ -1686,6 +1590,8 @@ var external_path_ = __nccwpck_require__(622);
 var external_os_ = __nccwpck_require__(87);
 // EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
 var exec = __nccwpck_require__(514);
+;// CONCATENATED MODULE: ./src/options.json
+const options_namespaceObject = JSON.parse('[{"actionOption":"auth","dockerOption":"auth"},{"actionOption":"debug","dockerOption":"debug","flag":true},{"actionOption":"dns","dockerOption":"dns"},{"actionOption":"doctor","dockerOption":"doctor","flag":true},{"actionOption":"fastFailRegexps","dockerOption":"fast-fail-regexps"},{"actionOption":"pac","dockerOption":"pac"},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"localProxy","dockerOption":"localproxy"},{"actionOption":"proxy","dockerOption":"proxy"},{"actionOption":"proxyCredentials","dockerOption":"proxy-userpwd"},{"actionOption":"noCache","dockerOption":"no-cache","flag":true},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"noProxy","dockerOption":"no-proxy","flag":true},{"actionOption":"tunnelIdentifier","dockerOption":"tunnel-identifier"},{"actionOption":"verbose","dockerOption":"verbose","flag":true}]');
 ;// CONCATENATED MODULE: ./src/container.ts
 var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -1701,6 +1607,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 
+
 const TMP_DIR_CONTAINER = '/tmp';
 function buildOptions() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -1710,6 +1617,18 @@ function buildOptions() {
             (0,core.getInput)('key', { required: true }),
             (0,core.getInput)('secret', { required: true })
         ].concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]);
+        const optionsMapping = options_namespaceObject;
+        for (const optionMapping of optionsMapping) {
+            const input = (0,core.getInput)(optionMapping.actionOption, {
+                required: optionMapping.required
+            });
+            if (optionMapping.flag) {
+                params.push(`--${optionMapping.dockerOption}`);
+            }
+            else {
+                params.push(`--${optionMapping.dockerOption}=${input}`);
+            }
+        }
         if ((0,core.isDebug)()) {
             params.push('--debug');
         }
@@ -1724,7 +1643,6 @@ function readyPoller(dir) {
                 reject(new Error('Timeout Error: waited 60 seconds for tunnel to start.'));
             }, 60 * 1000);
             const watcher = (0,external_fs_.watch)(dir, (eventType, fileName) => {
-                (0,core.info)(fileName);
                 if (fileName !== 'tb.ready') {
                     return;
                 }
@@ -1847,8 +1765,111 @@ function run() {
 // eslint-disable-next-line github/no-then
 run().catch(error => (0,core.setFailed)(error.message));
 
-})();
 
-module.exports = __webpack_exports__;
+/***/ }),
+
+/***/ 357:
+/***/ ((module) => {
+
+module.exports = require("assert");;
+
+/***/ }),
+
+/***/ 129:
+/***/ ((module) => {
+
+module.exports = require("child_process");;
+
+/***/ }),
+
+/***/ 614:
+/***/ ((module) => {
+
+module.exports = require("events");;
+
+/***/ }),
+
+/***/ 747:
+/***/ ((module) => {
+
+module.exports = require("fs");;
+
+/***/ }),
+
+/***/ 87:
+/***/ ((module) => {
+
+module.exports = require("os");;
+
+/***/ }),
+
+/***/ 622:
+/***/ ((module) => {
+
+module.exports = require("path");;
+
+/***/ }),
+
+/***/ 669:
+/***/ ((module) => {
+
+module.exports = require("util");;
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __nccwpck_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		var threw = true;
+/******/ 		try {
+/******/ 			__webpack_modules__[moduleId].call(module.exports, module, module.exports, __nccwpck_require__);
+/******/ 			threw = false;
+/******/ 		} finally {
+/******/ 			if(threw) delete __webpack_module_cache__[moduleId];
+/******/ 		}
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__nccwpck_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/compat */
+/******/ 	
+/******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module doesn't tell about it's top-level declarations so it can't be inlined
+/******/ 	var __webpack_exports__ = __nccwpck_require__(562);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;

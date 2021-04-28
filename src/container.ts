@@ -3,8 +3,16 @@ import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, debug, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
+import optionsMappingJson from './options.json'
 
 const TMP_DIR_CONTAINER = '/tmp'
+
+type OptionMapping = {
+    actionOption: string
+    dockerOption: string
+    required?: boolean
+    flag?: boolean
+}
 
 async function buildOptions(): Promise<string[]> {
     const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
@@ -14,6 +22,20 @@ async function buildOptions(): Promise<string[]> {
         getInput('key', {required: true}),
         getInput('secret', {required: true})
     ].concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`])
+
+    const optionsMapping: OptionMapping[] = optionsMappingJson
+
+    for (const optionMapping of optionsMapping) {
+        const input = getInput(optionMapping.actionOption, {
+            required: optionMapping.required
+        })
+
+        if (optionMapping.flag) {
+            params.push(`--${optionMapping.dockerOption}`)
+        } else {
+            params.push(`--${optionMapping.dockerOption}=${input}`)
+        }
+    }
 
     if (isDebug()) {
         params.push('--debug')
@@ -34,7 +56,6 @@ async function readyPoller(dir: string): Promise<unknown> {
         }, 60 * 1000)
 
         const watcher = watch(dir, (eventType, fileName) => {
-            info(fileName)
             if (fileName !== 'tb.ready') {
                 return
             }

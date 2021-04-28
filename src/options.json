@@ -1,0 +1,67 @@
+[
+    {
+        "actionOption": "auth",
+        "dockerOption": "auth"
+    },
+    {
+        "actionOption": "debug",
+        "dockerOption": "debug",
+        "flag": true
+    },
+    {
+        "actionOption": "dns",
+        "dockerOption": "dns"
+    },
+    {
+        "actionOption": "doctor",
+        "dockerOption": "doctor",
+        "flag": true
+    },
+    {
+        "actionOption": "fastFailRegexps",
+        "dockerOption": "fast-fail-regexps"
+    },
+	{
+        "actionOption": "pac",
+        "dockerOption": "pac"
+    },
+	{
+        "actionOption": "sePort",
+        "dockerOption": "se-port"
+    },
+	{
+        "actionOption": "localProxy",
+        "dockerOption": "localproxy"
+    },
+	{
+        "actionOption": "proxy",
+        "dockerOption": "proxy"
+    },
+	{
+        "actionOption": "proxyCredentials",
+        "dockerOption": "proxy-userpwd"
+    },
+	{
+        "actionOption": "noCache",
+        "dockerOption": "no-cache",
+        "flag": true
+    },
+    {
+        "actionOption": "sePort",
+        "dockerOption": "se-port"
+    },
+    {
+        "actionOption": "noProxy",
+        "dockerOption": "no-proxy",
+        "flag": true
+    },
+    {
+        "actionOption": "tunnelIdentifier",
+        "dockerOption": "tunnel-identifier"
+    },
+    {
+        "actionOption": "verbose",
+        "dockerOption": "verbose",
+        "flag": true
+    }
+]
