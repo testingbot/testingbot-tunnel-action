@@ -90,4 +90,4 @@ Add an identifier to this tunnel connection.
 In case of multiple tunnels, specify this identifier in your desired capabilities to use this specific tunnel.
 
 ## Feature requests and bug reports
-Please file feature requests and bug reports as [github issues](https://github.com/browserstack/github-actions/issues).
+Please file feature requests and bug reports as [github issues](https://github.com/testingbot/testingbot-tunnel-action/issues).
