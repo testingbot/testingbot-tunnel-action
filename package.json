@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "Set up the TestingBot Test Environment",
   "main": "index.js",
+  "homepage": "https://github.com/testingbot/testingbot-tunnel-action#readme",
+  "bugs": {
+    "url": "https://github.com/testingbot/testingbot-tunnel-action/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/testingbot/testingbot-tunnel-action.git"
+  },
   "scripts": {
     "format": "prettier --write **/*.ts",
     "format-check": "prettier --check **/*.ts",

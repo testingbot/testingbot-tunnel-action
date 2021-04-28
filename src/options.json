@@ -47,10 +47,6 @@
         "flag": true
     },
     {
-        "actionOption": "sePort",
-        "dockerOption": "se-port"
-    },
-    {
         "actionOption": "noProxy",
         "dockerOption": "no-proxy",
         "flag": true
@@ -58,10 +54,5 @@
     {
         "actionOption": "tunnelIdentifier",
         "dockerOption": "tunnel-identifier"
-    },
-    {
-        "actionOption": "verbose",
-        "dockerOption": "verbose",
-        "flag": true
     }
 ]
