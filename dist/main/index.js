@@ -1717,10 +1717,10 @@ function startTunnel() {
                 const log = yield external_fs_.promises.readFile((0,external_path_.join)(dir, 'tb-tunnel.log'), {
                     encoding: 'utf-8'
                 });
-                (hasError ? core.warning : core.debug)(`TestingBot Tunnel log: ${log}`);
+                (hasError ? core.warning : core.info)(`TestingBot Tunnel log: ${log}`);
             }
-            catch (_a) {
-                //
+            catch (errLog) {
+                (0,core.warning)(errLog);
             }
         }
         (0,core.info)('TestingBot Tunnel is ready');

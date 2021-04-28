@@ -10,7 +10,7 @@
     "build": "ncc build src/index.ts -o dist/main && ncc build src/post.ts -o dist/post",
     "test": "run-p test:*",
     "test:run": "node ./test/test.js",
-    "test:setup": "http-server ./test -p 8080 > /dev/null 2>&1 &",
+    "test:setup": "http-server ./test -p 8080 2>&1 &",
     "coverage": "nyc -r lcov -e .ts -x \"*.test.ts\" npm run test",
     "all": "npm run build && npm run format && npm run lint && npm run coverage"
   },

@@ -1,7 +1,7 @@
 import {promises, watch} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
-import {getInput, info, debug, isDebug, warning} from '@actions/core'
+import {getInput, info, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
 
@@ -139,9 +139,9 @@ export async function startTunnel(): Promise<string> {
                 encoding: 'utf-8'
             })
 
-            ;(hasError ? warning : debug)(`TestingBot Tunnel log: ${log}`)
-        } catch {
-            //
+            ;(hasError ? warning : info)(`TestingBot Tunnel log: ${log}`)
+        } catch (errLog) {
+            warning(errLog)
         }
     }
 
