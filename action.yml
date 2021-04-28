@@ -1,0 +1,29 @@
+# action.yml
+name: 'TestingBot Tunnel Action'
+description: 'A GitHub action to launch the TestingBot Tunnel'
+author: Jochen Delabie
+branding:
+    icon: grid
+    color: blue
+inputs:
+    key:
+        description: TestingBot API Key
+        required: true
+    secret:
+        description: TestingBot API Secret
+        required: true
+    debug:
+        description: Enable debug logging.
+        required: false
+    tbVersion:
+        description: Version of the TestingBot Tunnel docker image.
+        required: false
+        default: 'latest'
+    retryTimeout:
+        description: Do not retry if this amount of minutes has passed since starting.
+        required: false
+        default: '10'
+runs:
+    using: 'node12'
+    main: 'dist/main/index.js'
+    post: 'dist/post/index.js'
