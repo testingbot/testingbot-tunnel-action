@@ -1701,10 +1701,11 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 
-function buildOptions(dir) {
+const TMP_DIR_CONTAINER = '/tmp';
+function buildOptions() {
     return __awaiter(this, void 0, void 0, function* () {
-        const LOG_FILE = join(dir, 'tb-tunnel.log');
-        const READY_FILE = join(dir, 'tb.ready');
+        const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log');
+        const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready');
         const params = [
             getInput('key', { required: true }),
             getInput('secret', { required: true })
@@ -1770,7 +1771,8 @@ function startTunnel() {
         const containerVersion = getInput('tbVersion');
         const containerName = `testingbot/tunnel:${containerVersion}`;
         yield exec('docker', ['pull', containerName]);
-        const containerId = (yield execWithReturn('docker', ['run', '--network=host', '--detach', '--rm', containerName].concat(yield buildOptions(dir)))).trim();
+        const containerId = (yield execWithReturn('docker', ['run', '--network=host', '--detach', '--rm', '-v',
+            `${dir}:${TMP_DIR_CONTAINER}`, containerName].concat(yield buildOptions()))).trim();
         let hasError = false;
         try {
             yield readyPoller(dir);

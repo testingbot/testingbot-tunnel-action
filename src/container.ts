@@ -4,9 +4,11 @@ import {tmpdir} from 'os'
 import {getInput, info, debug, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 
-async function buildOptions(dir: string): Promise<string[]> {
-    const LOG_FILE = join(dir, 'tb-tunnel.log')
-    const READY_FILE = join(dir, 'tb.ready')
+const TMP_DIR_CONTAINER = '/tmp'
+
+async function buildOptions(): Promise<string[]> {
+    const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
+    const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready')
 
     const params = [
         getInput('key', {required: true}),
@@ -87,9 +89,15 @@ export async function startTunnel(): Promise<string> {
     const containerId = (
         await execWithReturn(
             'docker',
-            ['run', '--network=host', '--detach', '--rm', containerName].concat(
-                await buildOptions(dir)
-            )
+            [
+                'run',
+                '--network=host',
+                '--detach',
+                '--rm',
+                '-v',
+                `${dir}:${TMP_DIR_CONTAINER}`,
+                containerName
+            ].concat(await buildOptions())
         )
     ).trim()
 
