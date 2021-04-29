@@ -7,9 +7,9 @@ import optionsMappingJson from './options.json'
 import {create} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
-const TMP_DIR_HOST = mkdtempSync(
-    join(process.env['RUNNER_TEMP'] || tmpdir(), `tb-tunnel-action`)
-)
+const TMP_DIR_HOST = process.env['RUNNER_TEMP']
+    ? join(process.env['RUNNER_TEMP'], '../')
+    : mkdtempSync(join(tmpdir(), `tb-tunnel-action`))
 
 type OptionMapping = {
     actionOption: string
