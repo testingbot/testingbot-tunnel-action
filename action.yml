@@ -13,7 +13,7 @@ inputs:
         description: TestingBot API Secret
         required: true
     debug:
-        description: Enable debug logging.
+        description: Enables debug messages. Will output request/response headers.
         required: false
     tbVersion:
         description: Version of the TestingBot Tunnel docker image.
@@ -23,9 +23,46 @@ inputs:
         description: Do not retry if this amount of minutes has passed since starting.
         required: false
         default: '10'
+    auth:
+        description: Performs Basic Authentication for specific hosts, only works with HTTP.
+        required: false
+    dns:
+        description: "Use a custom DNS server. For example: 8.8.8.8"
+        required: false
+    doctor:
+        description: Perform sanity/health checks to detect possible misconfiguration or problems.
+        required: false
+    fastFailRegexps:
+        description: Specify domains you don't want to proxy, comma separated.
+        required: false
+    pac:
+        description: Proxy autoconfiguration. Should be a http(s) URL
+        required: false
+    sePort:
+        description: The local port your Selenium test should connect to. Default port is 4445
+        required: false
+    localProxy:
+        description: The port to launch the local proxy on (default 8087).
+        required: false
+    proxy:
+        description: "Specify an upstream proxy: PROXYHOST:PROXYPORT"
+        required: false
+    proxyCredentials:
+        description: Username and password required to access the proxy configured with proxy
+        required: false
+    noCache:
+        description: Bypass TestingBot Caching Proxy running on the tunnel VM.
+        required: false
+    noProxy:
+        description: Do not start a local proxy (requires user provided proxy server on port 8087)
+        required: false
     tunnelIdentifier:
         description: A unique identifier for the Tunnel
         required: false
+    uploadLogFile:
+        description: Upload the TestingBot log file as artifact
+        required: false
+        default: 'true'
 runs:
     using: 'node12'
     main: 'dist/main/index.js'

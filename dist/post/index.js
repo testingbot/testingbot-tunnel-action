@@ -8837,7 +8837,9 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 const TMP_DIR_CONTAINER = '/tmp';
-const TMP_DIR_HOST = process.env['RUNNER_TEMP'] ? (0,external_path_.join)(process.env['RUNNER_TEMP'], '../') : (0,external_fs_.mkdtempSync)((0,external_path_.join)((0,external_os_.tmpdir)(), `tb-tunnel-action`));
+const TMP_DIR_HOST = process.env['RUNNER_TEMP']
+    ? (0,external_path_.join)(process.env['RUNNER_TEMP'], '../')
+    : (0,external_fs_.mkdtempSync)((0,external_path_.join)((0,external_os_.tmpdir)(), `tb-tunnel-action`));
 function buildOptions() {
     return __awaiter(this, void 0, void 0, function* () {
         const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log');
@@ -8921,16 +8923,10 @@ function uploadLog() {
         (0,core.info)('Uploading artifacts');
         const artifactClient = (0,artifact_client/* create */.U)();
         const artifactName = 'testingbot-tunnel.log';
-        const files = (0,external_fs_.readdirSync)(TMP_DIR_HOST);
-        (0,core.info)(`Reading files : ${files.length.toString()}`);
-        for (let i = 0; i < files.length; i++) {
-            (0,core.info)(JSON.stringify(files[i]));
-        }
         try {
-            const uploadResult = yield artifactClient.uploadArtifact(artifactName, [(0,external_path_.join)(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
+            yield artifactClient.uploadArtifact(artifactName, [(0,external_path_.join)(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
                 continueOnError: true
             });
-            (0,core.info)(JSON.stringify(uploadResult));
         }
         catch (err) {
             (0,core.warning)(err);
@@ -8996,9 +8992,10 @@ function run() {
             (0,core.warning)('No active TestingBot Tunnel available.');
             return;
         }
-        yield uploadLog();
         yield stopTunnel(containerId);
-        yield uploadLog();
+        if ((0,core.getInput)('uploadLogFile') === 'true') {
+            yield uploadLog();
+        }
     });
 }
 // eslint-disable-next-line github/no-then

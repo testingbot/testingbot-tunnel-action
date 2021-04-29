@@ -1,4 +1,4 @@
-import {promises, watch, mkdtempSync, readdirSync} from 'fs'
+import {promises, watch, mkdtempSync} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, isDebug, warning} from '@actions/core'
@@ -112,15 +112,8 @@ export async function uploadLog(): Promise<void> {
     const artifactClient = create()
     const artifactName = 'testingbot-tunnel.log'
 
-    const files = readdirSync(TMP_DIR_HOST)
-    info(`Reading files : ${files.length.toString()}`)
-
-    for (let i = 0; i < files.length; i++) {
-        info(JSON.stringify(files[i]))
-    }
-
     try {
-        const uploadResult = await artifactClient.uploadArtifact(
+        await artifactClient.uploadArtifact(
             artifactName,
             [join(TMP_DIR_HOST, 'tb-tunnel.log')],
             TMP_DIR_HOST,
@@ -128,7 +121,6 @@ export async function uploadLog(): Promise<void> {
                 continueOnError: true
             }
         )
-        info(JSON.stringify(uploadResult))
     } catch (err) {
         warning(err)
     }
