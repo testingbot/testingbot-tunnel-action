@@ -7,7 +7,9 @@ import optionsMappingJson from './options.json'
 import {create} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
-const TMP_DIR_HOST = mkdtempSync(join(tmpdir(), `tb-tunnel-action`))
+const TMP_DIR_HOST = mkdtempSync(
+    join(process.env['RUNNER_TEMP'] || tmpdir(), `tb-tunnel-action`)
+)
 
 type OptionMapping = {
     actionOption: string
@@ -111,6 +113,7 @@ export async function uploadLog(): Promise<void> {
     const artifactName = 'testingbot-tunnel.log'
 
     const files = readdirSync(TMP_DIR_HOST)
+    info(`Reading files : ${files.length.toString()}`)
 
     for (let i = 0; i < files.length; i++) {
         info(JSON.stringify(files[i]))

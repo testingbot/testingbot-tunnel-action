@@ -8837,7 +8837,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 const TMP_DIR_CONTAINER = '/tmp';
-const TMP_DIR_HOST = (0,external_fs_.mkdtempSync)((0,external_path_.join)((0,external_os_.tmpdir)(), `tb-tunnel-action`));
+const TMP_DIR_HOST = (0,external_fs_.mkdtempSync)((0,external_path_.join)(process.env['RUNNER_TEMP'] || (0,external_os_.tmpdir)(), `tb-tunnel-action`));
 function buildOptions() {
     return __awaiter(this, void 0, void 0, function* () {
         const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log');
@@ -8922,6 +8922,7 @@ function uploadLog() {
         const artifactClient = (0,artifact_client/* create */.U)();
         const artifactName = 'testingbot-tunnel.log';
         const files = (0,external_fs_.readdirSync)(TMP_DIR_HOST);
+        (0,core.info)(`Reading files : ${files.length.toString()}`);
         for (let i = 0; i < files.length; i++) {
             (0,core.info)(JSON.stringify(files[i]));
         }
