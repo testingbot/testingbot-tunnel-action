@@ -1,4 +1,4 @@
-import {promises, watch, mkdtempSync} from 'fs'
+import {promises, watch, mkdtempSync, readdirSync} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, isDebug, warning} from '@actions/core'
@@ -110,8 +110,11 @@ export async function uploadLog(): Promise<void> {
     const artifactClient = create()
     const artifactName = 'testingbot-tunnel.log'
 
-    const debugResponse = await execWithReturn('ls', [TMP_DIR_HOST])
-    info(debugResponse)
+    const files = readdirSync(TMP_DIR_HOST)
+
+    for (let i = 0; i < files.length; i++) {
+        info(JSON.stringify(files[i]))
+    }
 
     try {
         const uploadResult = await artifactClient.uploadArtifact(

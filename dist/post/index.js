@@ -8921,8 +8921,10 @@ function uploadLog() {
         (0,core.info)('Uploading artifacts');
         const artifactClient = (0,artifact_client/* create */.U)();
         const artifactName = 'testingbot-tunnel.log';
-        const debugResponse = yield execWithReturn('ls', [TMP_DIR_HOST]);
-        (0,core.info)(debugResponse);
+        const files = (0,external_fs_.readdirSync)(TMP_DIR_HOST);
+        for (let i = 0; i < files.length; i++) {
+            (0,core.info)(JSON.stringify(files[i]));
+        }
         try {
             const uploadResult = yield artifactClient.uploadArtifact(artifactName, [(0,external_path_.join)(TMP_DIR_HOST, 'tb-tunnel.log')], TMP_DIR_HOST, {
                 continueOnError: true
