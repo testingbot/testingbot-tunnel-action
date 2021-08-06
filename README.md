@@ -18,7 +18,7 @@ jobs:
         name: Action Test
         steps:
             # ...
-            - uses: testingbot/testingbot-tunnel-action@v1
+            - uses: testingbot/testingbot-tunnel-action@v1.1.0
               with:
                   key: ${{ secrets.TB_KEY }}
                   secret: ${{ secrets.TB_SECRET }}
