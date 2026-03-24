@@ -7,7 +7,7 @@ import optionsMappingJson from './options.json'
 import {DefaultArtifactClient} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
-const TMP_DIR_HOST = process.env['RUNNER_TEMP']
+export const TMP_DIR_HOST = process.env['RUNNER_TEMP']
     ? join(process.env['RUNNER_TEMP'], '../')
     : mkdtempSync(join(tmpdir(), `tb-tunnel-action`))
 
@@ -18,7 +18,7 @@ type OptionMapping = {
     flag?: boolean
 }
 
-async function buildOptions(): Promise<string[]> {
+export async function buildOptions(): Promise<string[]> {
     const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
     const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready')
 
@@ -50,7 +50,7 @@ async function buildOptions(): Promise<string[]> {
     return params
 }
 
-async function readyPoller(): Promise<void> {
+export async function readyPoller(): Promise<void> {
     const readyFile = join(TMP_DIR_HOST, 'tb.ready')
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
