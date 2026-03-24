@@ -2,9 +2,22 @@ name: "PR Checks"
 on: push
 
 jobs:
-    test:
+    unit:
         runs-on: ubuntu-latest
-        name: Action Test
+        name: Unit Tests
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: 20
+                cache: 'npm'
+            - run: npm install
+            - run: npm test
+
+    e2e:
+        runs-on: ubuntu-latest
+        name: E2E Test
+        needs: unit
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
@@ -16,12 +29,8 @@ jobs:
                 key: ${{ secrets.TB_KEY }}
                 secret: ${{ secrets.TB_SECRET }}
                 tunnelIdentifier: github-action-tunnel
-
-            - name: "Install Dependencies"
-              run: npm install
-
-            - name: "Run Test"
-              run: npm run test
+            - run: npm install
+            - run: npm run test:e2e
               env:
                 TB_KEY: ${{ secrets.TB_KEY }}
                 TB_SECRET: ${{ secrets.TB_SECRET }}
