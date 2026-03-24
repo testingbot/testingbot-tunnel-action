@@ -1,4 +1,4 @@
-import {promises, watch, mkdtempSync} from 'fs'
+import {promises, existsSync, watch, mkdtempSync} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, isDebug, warning} from '@actions/core'
@@ -50,7 +50,8 @@ async function buildOptions(): Promise<string[]> {
     return params
 }
 
-async function readyPoller(): Promise<unknown> {
+async function readyPoller(): Promise<void> {
+    const readyFile = join(TMP_DIR_HOST, 'tb.ready')
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             watcher.close()
@@ -67,8 +68,15 @@ async function readyPoller(): Promise<unknown> {
             }
             clearTimeout(timeout)
             watcher.close()
-            resolve(void 0)
+            resolve()
         })
+
+        // Check if file already exists (race: tunnel may start before watcher)
+        if (existsSync(readyFile)) {
+            clearTimeout(timeout)
+            watcher.close()
+            resolve()
+        }
     })
 }
 
@@ -119,7 +127,7 @@ export async function uploadLog(): Promise<void> {
             TMP_DIR_HOST
         )
     } catch (err) {
-        warning(err)
+        warning(err instanceof Error ? err : String(err))
     }
 }
 
@@ -162,7 +170,7 @@ export async function startTunnel(): Promise<string> {
 
             ;(hasError ? warning : info)(`TestingBot Tunnel log: ${log}`)
         } catch (errLog) {
-            warning(errLog)
+            warning(errLog instanceof Error ? errLog : String(errLog))
         }
     }
 
