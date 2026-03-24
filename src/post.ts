@@ -15,4 +15,4 @@ async function run(): Promise<void> {
 }
 
 // eslint-disable-next-line github/no-then
-run().catch(error => setFailed(error.message))
+run().catch(error => setFailed(error instanceof Error ? error.message : String(error)))

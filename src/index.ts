@@ -17,10 +17,9 @@ async function run(): Promise<void> {
                 break
             }
             const delay = retryDelays[Math.min(retryDelays.length - 1, i)]
+            const message = e instanceof Error ? e.message : String(e)
             warning(
-                `Error occurred on attempt ${i + 1} (${
-                    e.message
-                }). Retrying in ${delay} ms...`
+                `Error occurred on attempt ${i + 1} (${message}). Retrying in ${delay} ms...`
             )
             await new Promise<void>(resolve => setTimeout(resolve, delay))
         }
@@ -29,4 +28,4 @@ async function run(): Promise<void> {
 }
 
 // eslint-disable-next-line github/no-then
-run().catch(error => setFailed(error.message))
+run().catch(error => setFailed(error instanceof Error ? error.message : String(error)))
