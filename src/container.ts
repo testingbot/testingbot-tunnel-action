@@ -4,7 +4,7 @@ import {tmpdir} from 'os'
 import {getInput, info, isDebug, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
-import {create} from '@actions/artifact'
+import {DefaultArtifactClient} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
 const TMP_DIR_HOST = process.env['RUNNER_TEMP']
@@ -109,17 +109,14 @@ export async function stopTunnel(containerId: string): Promise<void> {
 
 export async function uploadLog(): Promise<void> {
     info('Uploading artifacts')
-    const artifactClient = create()
+    const artifactClient = new DefaultArtifactClient()
     const artifactName = 'testingbot-tunnel.log'
 
     try {
         await artifactClient.uploadArtifact(
             artifactName,
             [join(TMP_DIR_HOST, 'tb-tunnel.log')],
-            TMP_DIR_HOST,
-            {
-                continueOnError: true
-            }
+            TMP_DIR_HOST
         )
     } catch (err) {
         warning(err)
