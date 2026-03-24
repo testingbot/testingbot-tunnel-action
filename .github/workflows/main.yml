@@ -6,7 +6,11 @@ jobs:
         runs-on: ubuntu-latest
         name: Action Test
         steps:
-            - uses: actions/checkout@v1
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: 20
+                cache: 'npm'
             - uses: ./
               with:
                 key: ${{ secrets.TB_KEY }}
