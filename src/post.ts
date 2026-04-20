@@ -1,7 +1,7 @@
 import {getState, warning, setFailed, getInput} from '@actions/core'
 import {stopTunnel, uploadLog} from './container'
 
-async function run(): Promise<void> {
+export async function run(): Promise<void> {
     const containerId = getState('containerId')
     if (!containerId) {
         warning('No active TestingBot Tunnel available.')
@@ -14,5 +14,10 @@ async function run(): Promise<void> {
     }
 }
 
-// eslint-disable-next-line github/no-then
-run().catch(error => setFailed(error instanceof Error ? error.message : String(error)))
+/* istanbul ignore next */
+if (require.main === module) {
+    // eslint-disable-next-line github/no-then
+    run().catch(error =>
+        setFailed(error instanceof Error ? error.message : String(error))
+    )
+}

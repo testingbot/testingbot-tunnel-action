@@ -3,6 +3,7 @@ import {strict as assert} from 'assert'
 import * as sinon from 'sinon'
 import * as core from '@actions/core'
 import * as actionsExec from '@actions/exec'
+import * as artifact from '@actions/artifact'
 import * as fs from 'fs'
 import {join} from 'path'
 
@@ -44,7 +45,9 @@ describe('buildOptions', () => {
     it('should include value-based options when set', async () => {
         getInputStub.withArgs('key', sinon.match.any).returns('k')
         getInputStub.withArgs('secret', sinon.match.any).returns('s')
-        getInputStub.withArgs('tunnelIdentifier', sinon.match.any).returns('my-tunnel')
+        getInputStub
+            .withArgs('tunnelIdentifier', sinon.match.any)
+            .returns('my-tunnel')
         getInputStub.withArgs('dns', sinon.match.any).returns('8.8.8.8')
         getInputStub.returns('')
 
@@ -99,9 +102,15 @@ describe('buildOptions', () => {
         getInputStub.withArgs('pac', sinon.match.any).returns('http://pac.url')
         getInputStub.withArgs('sePort', sinon.match.any).returns('4446')
         getInputStub.withArgs('localProxy', sinon.match.any).returns('9090')
-        getInputStub.withArgs('proxy', sinon.match.any).returns('proxy.host:8080')
-        getInputStub.withArgs('proxyCredentials', sinon.match.any).returns('u:p')
-        getInputStub.withArgs('fastFailRegexps', sinon.match.any).returns('*.example.com')
+        getInputStub
+            .withArgs('proxy', sinon.match.any)
+            .returns('proxy.host:8080')
+        getInputStub
+            .withArgs('proxyCredentials', sinon.match.any)
+            .returns('u:p')
+        getInputStub
+            .withArgs('fastFailRegexps', sinon.match.any)
+            .returns('*.example.com')
         getInputStub.returns('')
 
         const opts = buildOptions()
@@ -158,14 +167,20 @@ describe('stopTunnel', () => {
 
     it('should stop a running container', async () => {
         // First exec call is `docker ps` — simulate returning the container ID
-        execStub.onFirstCall().callsFake(
-            async (cmd: string, args?: string[], opts?: {listeners?: {stdout?: (data: Buffer) => void}}) => {
-                if (opts?.listeners?.stdout) {
-                    opts.listeners.stdout(Buffer.from('abc123\n'))
+        execStub
+            .onFirstCall()
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    if (opts?.listeners?.stdout) {
+                        opts.listeners.stdout(Buffer.from('abc123\n'))
+                    }
+                    return 0
                 }
-                return 0
-            }
-        )
+            )
         // Second exec call is `docker container stop`
         execStub.onSecondCall().resolves(0)
 
@@ -173,38 +188,73 @@ describe('stopTunnel', () => {
 
         assert.ok(execStub.calledTwice)
         assert.deepEqual(execStub.secondCall.args[0], 'docker')
-        assert.deepEqual(execStub.secondCall.args[1], ['container', 'stop', 'abc123'])
+        assert.deepEqual(execStub.secondCall.args[1], [
+            'container',
+            'stop',
+            'abc123'
+        ])
     })
 
     it('should not stop if container is not running', async () => {
-        execStub.onFirstCall().callsFake(
-            async (cmd: string, args?: string[], opts?: {listeners?: {stdout?: (data: Buffer) => void}}) => {
-                if (opts?.listeners?.stdout) {
-                    opts.listeners.stdout(Buffer.from(''))
+        execStub
+            .onFirstCall()
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    if (opts?.listeners?.stdout) {
+                        opts.listeners.stdout(Buffer.from(''))
+                    }
+                    return 0
                 }
-                return 0
-            }
-        )
+            )
 
         await stopTunnel('abc123')
 
         assert.ok(execStub.calledOnce)
-        assert.ok(infoStub.calledWith('TestingBot Tunnel does not appear to be running.'))
+        assert.ok(
+            infoStub.calledWith(
+                'TestingBot Tunnel does not appear to be running.'
+            )
+        )
     })
 })
 
 describe('uploadLog', () => {
+    let uploadArtifactStub: sinon.SinonStub
+
     beforeEach(() => {
         sinon.stub(core, 'info')
         sinon.stub(core, 'warning')
+        uploadArtifactStub = sinon.stub(
+            artifact.DefaultArtifactClient.prototype,
+            'uploadArtifact'
+        )
     })
 
     afterEach(() => {
         sinon.restore()
     })
 
-    it('should not throw if log file is missing', async () => {
-        // uploadLog catches errors internally
+    it('uploads the artifact with the correct name and path', async () => {
+        uploadArtifactStub.resolves({id: 1, size: 0})
+
+        await uploadLog()
+
+        assert.ok(uploadArtifactStub.calledOnce)
+        const [name, files, rootDir] = uploadArtifactStub.firstCall.args
+        assert.equal(name, 'testingbot-tunnel.log')
+        assert.equal(files.length, 1)
+        assert.ok(files[0].endsWith('tb-tunnel.log'))
+        assert.equal(rootDir, TMP_DIR_HOST)
+    })
+
+    it('swallows errors so post-action does not fail', async () => {
+        uploadArtifactStub.rejects(new Error('upload failed'))
+
+        // uploadLog catches errors internally — should not throw
         await uploadLog()
     })
 })
@@ -246,51 +296,70 @@ describe('startTunnel', () => {
         // docker pull
         execStub.onFirstCall().resolves(0)
         // docker run — return container ID via stdout
-        execStub.onSecondCall().callsFake(
-            async (cmd: string, args?: string[], opts?: {listeners?: {stdout?: (data: Buffer) => void}}) => {
-                if (opts?.listeners?.stdout) {
-                    opts.listeners.stdout(Buffer.from('container-id-123\n'))
+        execStub
+            .onSecondCall()
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    if (opts?.listeners?.stdout) {
+                        opts.listeners.stdout(Buffer.from('container-id-123\n'))
+                    }
+                    // Simulate tunnel becoming ready
+                    fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
+                    return 0
                 }
-                // Simulate tunnel becoming ready
-                fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
-                return 0
-            }
-        )
+            )
 
         const containerId = await startTunnel()
 
         assert.equal(containerId, 'container-id-123')
-        assert.ok(execStub.firstCall.args[1]?.includes('testingbot/tunnel:latest'))
+        assert.ok(
+            execStub.firstCall.args[1]?.includes('testingbot/tunnel:latest')
+        )
     })
 
     it('should stop container and throw on readyPoller timeout @slow', async () => {
         // docker pull
         execStub.onFirstCall().resolves(0)
         // docker run
-        execStub.onSecondCall().callsFake(
-            async (cmd: string, args?: string[], opts?: {listeners?: {stdout?: (data: Buffer) => void}}) => {
-                if (opts?.listeners?.stdout) {
-                    opts.listeners.stdout(Buffer.from('container-id-456\n'))
+        execStub
+            .onSecondCall()
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    if (opts?.listeners?.stdout) {
+                        opts.listeners.stdout(Buffer.from('container-id-456\n'))
+                    }
+                    // Don't create the ready file — will trigger timeout
+                    return 0
                 }
-                // Don't create the ready file — will trigger timeout
-                return 0
-            }
-        )
+            )
         // docker ps (from stopTunnel)
-        execStub.onCall(2).callsFake(
-            async (cmd: string, args?: string[], opts?: {listeners?: {stdout?: (data: Buffer) => void}}) => {
-                if (opts?.listeners?.stdout) {
-                    opts.listeners.stdout(Buffer.from('container-id-456\n'))
+        execStub
+            .onCall(2)
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    if (opts?.listeners?.stdout) {
+                        opts.listeners.stdout(Buffer.from('container-id-456\n'))
+                    }
+                    return 0
                 }
-                return 0
-            }
-        )
+            )
         // docker container stop
         execStub.onCall(3).resolves(0)
 
-        await assert.rejects(
-            () => startTunnel(),
-            {message: 'Timeout Error: waited 60 seconds for tunnel to start.'}
-        )
+        await assert.rejects(() => startTunnel(), {
+            message: 'Timeout Error: waited 60 seconds for tunnel to start.'
+        })
     }).timeout(70000)
 })
