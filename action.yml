@@ -23,6 +23,10 @@ inputs:
         description: Do not retry if this amount of minutes has passed since starting.
         required: false
         default: '10'
+    readyTimeout:
+        description: Seconds to wait for the tunnel ready-file after starting the container.
+        required: false
+        default: '60'
     auth:
         description: Performs Basic Authentication for specific hosts, only works with HTTP.
         required: false

@@ -98,6 +98,10 @@ Default is true.
 
 How long, in minutes, should the Action wait if the tunnel fails to start. Default: 10.
 
+### `readyTimeout`:
+
+How long, in seconds, to wait for the tunnel ready-file after the container starts. Default: 60.
+
 ### `tbVersion`:
 
 Version tag of the `testingbot/tunnel` Docker image to run. Default: `latest`.
