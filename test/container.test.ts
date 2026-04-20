@@ -29,22 +29,18 @@ describe('buildOptions', () => {
         sinon.restore()
     })
 
-    it('should include key, secret, logfile and readyfile', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('my-key')
-        getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
+    it('should include logfile and readyfile but never key/secret', async () => {
         getInputStub.returns('')
 
         const opts = buildOptions()
 
-        assert.equal(opts[0], 'my-key')
-        assert.equal(opts[1], 'my-secret')
         assert.ok(opts.some(o => o.startsWith('--logfile=')))
         assert.ok(opts.some(o => o.startsWith('--readyfile=')))
+        // Credentials must not appear in the CLI args — they are passed via env.
+        assert.ok(!opts.some(o => o === 'my-key' || o === 'my-secret'))
     })
 
     it('should include value-based options when set', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
         getInputStub
             .withArgs('tunnelIdentifier', sinon.match.any)
             .returns('my-tunnel')
@@ -58,8 +54,6 @@ describe('buildOptions', () => {
     })
 
     it('should include flag options without a value', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
         getInputStub.withArgs('debug', sinon.match.any).returns('true')
         getInputStub.withArgs('noCache', sinon.match.any).returns('true')
         getInputStub.returns('')
@@ -73,20 +67,15 @@ describe('buildOptions', () => {
         assert.ok(!opts.some(o => o.startsWith('--no-cache=')))
     })
 
-    it('should skip options with empty values', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
+    it('should only contain logfile and readyfile when nothing else is set', async () => {
         getInputStub.returns('')
 
         const opts = buildOptions()
 
-        // Should only have key, secret, logfile, readyfile
-        assert.equal(opts.length, 4)
+        assert.equal(opts.length, 2)
     })
 
     it('should add --debug when core.isDebug is true', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
         getInputStub.returns('')
         isDebugStub.returns(true)
 
@@ -96,8 +85,6 @@ describe('buildOptions', () => {
     })
 
     it('should handle all option mappings', async () => {
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
         getInputStub.withArgs('auth', sinon.match.any).returns('user:pass')
         getInputStub.withArgs('pac', sinon.match.any).returns('http://pac.url')
         getInputStub.withArgs('sePort', sinon.match.any).returns('4446')
@@ -267,10 +254,11 @@ describe('startTunnel', () => {
         sinon.stub(core, 'info')
         sinon.stub(core, 'warning')
         sinon.stub(core, 'isDebug').returns(false)
+        sinon.stub(core, 'setSecret')
         getInputStub = sinon.stub(core, 'getInput')
         getInputStub.withArgs('tbVersion').returns('latest')
-        getInputStub.withArgs('key', sinon.match.any).returns('k')
-        getInputStub.withArgs('secret', sinon.match.any).returns('s')
+        getInputStub.withArgs('key', sinon.match.any).returns('my-key')
+        getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
         getInputStub.returns('')
 
         execStub = sinon.stub(actionsExec, 'exec')
@@ -319,6 +307,21 @@ describe('startTunnel', () => {
         assert.ok(
             execStub.firstCall.args[1]?.includes('testingbot/tunnel:latest')
         )
+
+        // docker run args: forward creds as env vars, never inline them
+        const runArgs = execStub.secondCall.args[1] as string[]
+        assert.ok(runArgs.includes('-e'))
+        assert.ok(runArgs.includes('TESTINGBOT_KEY'))
+        assert.ok(runArgs.includes('TESTINGBOT_SECRET'))
+        assert.ok(!runArgs.includes('my-key'))
+        assert.ok(!runArgs.includes('my-secret'))
+
+        // exec options should carry the env vars so docker can forward them
+        const runOpts = execStub.secondCall.args[2] as {
+            env: NodeJS.ProcessEnv
+        }
+        assert.equal(runOpts.env.TESTINGBOT_KEY, 'my-key')
+        assert.equal(runOpts.env.TESTINGBOT_SECRET, 'my-secret')
     })
 
     it('should stop container and throw on readyPoller timeout @slow', async () => {

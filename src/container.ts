@@ -1,7 +1,7 @@
 import {promises, existsSync, watch, mkdtempSync} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
-import {getInput, info, isDebug, warning} from '@actions/core'
+import {getInput, info, isDebug, setSecret, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
 import {DefaultArtifactClient} from '@actions/artifact'
@@ -22,10 +22,10 @@ export function buildOptions(): string[] {
     const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
     const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready')
 
-    const params = [
-        getInput('key', {required: true}),
-        getInput('secret', {required: true})
-    ].concat([`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`])
+    // Credentials are passed to the tunnel via TESTINGBOT_KEY / TESTINGBOT_SECRET
+    // environment variables (see startTunnel), not positional CLI args, so they
+    // do not leak into `ps aux` or `docker inspect` command-lines.
+    const params = [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]
 
     const optionsMapping: OptionMapping[] = optionsMappingJson
 
@@ -52,15 +52,16 @@ export function buildOptions(): string[] {
 
 export async function readyPoller(): Promise<void> {
     const readyFile = join(TMP_DIR_HOST, 'tb.ready')
+    const timeoutSeconds = parseInt(getInput('readyTimeout'), 10) || 60
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             watcher.close()
             reject(
                 new Error(
-                    'Timeout Error: waited 60 seconds for tunnel to start.'
+                    `Timeout Error: waited ${timeoutSeconds} seconds for tunnel to start.`
                 )
             )
-        }, 60 * 1000)
+        }, timeoutSeconds * 1000)
 
         const watcher = watch(TMP_DIR_HOST, (eventType, fileName) => {
             if (fileName !== 'tb.ready') {
@@ -82,10 +83,12 @@ export async function readyPoller(): Promise<void> {
 
 async function execWithReturn(
     commandLine: string,
-    args?: string[]
+    args?: string[],
+    extraOptions?: {env?: {[key: string]: string}}
 ): Promise<string> {
     let output = ''
     await exec(commandLine, args, {
+        ...extraOptions,
         listeners: {
             stdout: (data: Buffer) => {
                 output += data.toString()
@@ -136,6 +139,22 @@ export async function startTunnel(): Promise<string> {
     const containerName = `testingbot/tunnel:${containerVersion}`
     await exec('docker', ['pull', containerName])
 
+    // Mask credentials and forward them to the container via env vars.
+    // The tunnel binary reads TESTINGBOT_KEY / TESTINGBOT_SECRET when no
+    // positional credentials are supplied, keeping secrets out of `ps aux`,
+    // `docker inspect`, and workflow logs.
+    const key = getInput('key', {required: true})
+    const secret = getInput('secret', {required: true})
+    setSecret(key)
+    setSecret(secret)
+
+    const baseEnv: {[key: string]: string} = {}
+    for (const [envKey, envValue] of Object.entries(process.env)) {
+        if (envValue !== undefined) {
+            baseEnv[envKey] = envValue
+        }
+    }
+
     const containerId = (
         await execWithReturn(
             'docker',
@@ -144,10 +163,21 @@ export async function startTunnel(): Promise<string> {
                 '--network=host',
                 '--detach',
                 '--rm',
+                '-e',
+                'TESTINGBOT_KEY',
+                '-e',
+                'TESTINGBOT_SECRET',
                 '-v',
                 `${TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
                 containerName
-            ].concat(buildOptions())
+            ].concat(buildOptions()),
+            {
+                env: {
+                    ...baseEnv,
+                    TESTINGBOT_KEY: key,
+                    TESTINGBOT_SECRET: secret
+                }
+            }
         )
     ).trim()
 

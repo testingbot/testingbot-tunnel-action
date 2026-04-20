@@ -15,14 +15,16 @@
     "format-check": "prettier --check '**/*.ts'",
     "lint": "eslint 'src/**/*.ts'",
     "build": "ncc build src/index.ts -o dist/main && ncc build src/post.ts -o dist/post",
-    "test": "mocha",
-    "test:e2e": "run-p e2e:*",
-    "e2e:run": "node ./test/e2e.test.js",
-    "e2e:setup": "http-server ./test -p 8080 > /dev/null 2>&1 &",
+    "test": "mocha --grep @slow --invert",
+    "test:slow": "mocha --grep @slow --timeout 75000",
+    "test:e2e": "http-server ./test -p 8080 > /dev/null 2>&1 & node ./test/e2e.test.js",
     "all": "npm run build && npm run format && npm run lint && npm run test"
   },
   "author": "Jochen Delabie <jochen@testingbot.com>",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [
     "testingbot",
     "tunnel",
@@ -39,7 +41,6 @@
     "eslint-plugin-github": "^4.1.3",
     "http-server": "^14.1.1",
     "mocha": "^11.7.5",
-    "npm-run-all": "^4.1.5",
     "prettier": "^2.2.1",
     "sinon": "^21.0.3",
     "ts-node": "^10.9.2",
