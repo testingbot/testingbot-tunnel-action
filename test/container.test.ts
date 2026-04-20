@@ -33,7 +33,7 @@ describe('buildOptions', () => {
         getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
         getInputStub.returns('')
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         assert.equal(opts[0], 'my-key')
         assert.equal(opts[1], 'my-secret')
@@ -48,7 +48,7 @@ describe('buildOptions', () => {
         getInputStub.withArgs('dns', sinon.match.any).returns('8.8.8.8')
         getInputStub.returns('')
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         assert.ok(opts.includes('--tunnel-identifier=my-tunnel'))
         assert.ok(opts.includes('--dns=8.8.8.8'))
@@ -61,7 +61,7 @@ describe('buildOptions', () => {
         getInputStub.withArgs('noCache', sinon.match.any).returns('true')
         getInputStub.returns('')
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         assert.ok(opts.includes('--debug'))
         assert.ok(opts.includes('--no-cache'))
@@ -75,7 +75,7 @@ describe('buildOptions', () => {
         getInputStub.withArgs('secret', sinon.match.any).returns('s')
         getInputStub.returns('')
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         // Should only have key, secret, logfile, readyfile
         assert.equal(opts.length, 4)
@@ -87,7 +87,7 @@ describe('buildOptions', () => {
         getInputStub.returns('')
         isDebugStub.returns(true)
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         assert.ok(opts.includes('--debug'))
     })
@@ -104,7 +104,7 @@ describe('buildOptions', () => {
         getInputStub.withArgs('fastFailRegexps', sinon.match.any).returns('*.example.com')
         getInputStub.returns('')
 
-        const opts = await buildOptions()
+        const opts = buildOptions()
 
         assert.ok(opts.includes('--auth=user:pass'))
         assert.ok(opts.includes('--pac=http://pac.url'))

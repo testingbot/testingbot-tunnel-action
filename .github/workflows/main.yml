@@ -1,6 +1,9 @@
 name: "PR Checks"
 on: push
 
+permissions:
+    contents: read
+
 jobs:
     unit:
         runs-on: ubuntu-latest

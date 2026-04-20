@@ -18,7 +18,7 @@ type OptionMapping = {
     flag?: boolean
 }
 
-export async function buildOptions(): Promise<string[]> {
+export function buildOptions(): string[] {
     const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
     const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready')
 
@@ -147,7 +147,7 @@ export async function startTunnel(): Promise<string> {
                 '-v',
                 `${TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
                 containerName
-            ].concat(await buildOptions())
+            ].concat(buildOptions())
         )
     ).trim()
 

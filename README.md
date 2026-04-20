@@ -18,7 +18,7 @@ jobs:
         name: Action Test
         steps:
             # ...
-            - uses: testingbot/testingbot-tunnel-action@v1.1.0
+            - uses: testingbot/testingbot-tunnel-action@v2
               with:
                   key: ${{ secrets.TB_KEY }}
                   secret: ${{ secrets.TB_SECRET }}
@@ -96,7 +96,11 @@ Default is true.
 
 ### `retryTimeout`:
 
-How long, in seconds, should the Action wait if the tunnel fails to start.
+How long, in minutes, should the Action wait if the tunnel fails to start. Default: 10.
+
+### `tbVersion`:
+
+Version tag of the `testingbot/tunnel` Docker image to run. Default: `latest`.
 
 ## Feature requests and bug reports
 Please file feature requests and bug reports as [github issues](https://github.com/testingbot/testingbot-tunnel-action/issues).

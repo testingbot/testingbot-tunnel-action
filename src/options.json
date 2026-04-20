@@ -21,27 +21,27 @@
         "actionOption": "fastFailRegexps",
         "dockerOption": "fast-fail-regexps"
     },
-	{
+    {
         "actionOption": "pac",
         "dockerOption": "pac"
     },
-	{
+    {
         "actionOption": "sePort",
         "dockerOption": "se-port"
     },
-	{
+    {
         "actionOption": "localProxy",
         "dockerOption": "localproxy"
     },
-	{
+    {
         "actionOption": "proxy",
         "dockerOption": "proxy"
     },
-	{
+    {
         "actionOption": "proxyCredentials",
         "dockerOption": "proxy-userpwd"
     },
-	{
+    {
         "actionOption": "noCache",
         "dockerOption": "no-cache",
         "flag": true
