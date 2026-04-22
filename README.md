@@ -106,5 +106,33 @@ How long, in seconds, to wait for the tunnel ready-file after the container star
 
 Version tag of the `testingbot/tunnel` Docker image to run. Default: `latest`.
 
+## Outputs
+
+### `container-id`
+
+Docker container ID of the running TestingBot Tunnel.
+
+### `tunnel-identifier`
+
+The tunnel identifier (echoed from the `tunnelIdentifier` input).
+
+### `log-file`
+
+Absolute path to the tunnel log file on the runner. Useful for piping into `actions/upload-artifact` in your own workflow:
+
+```yaml
+- uses: testingbot/testingbot-tunnel-action@v2
+  id: tunnel
+  with:
+    key: ${{ secrets.TB_KEY }}
+    secret: ${{ secrets.TB_SECRET }}
+
+- if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: tunnel-log
+    path: ${{ steps.tunnel.outputs.log-file }}
+```
+
 ## Feature requests and bug reports
 Please file feature requests and bug reports as [github issues](https://github.com/testingbot/testingbot-tunnel-action/issues).

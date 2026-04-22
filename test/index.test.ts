@@ -8,11 +8,13 @@ import {run, retryDelays} from '../src/index'
 describe('index.run', () => {
     let getInputStub: sinon.SinonStub
     let saveStateStub: sinon.SinonStub
+    let setOutputStub: sinon.SinonStub
     let startTunnelStub: sinon.SinonStub
 
     beforeEach(() => {
         getInputStub = sinon.stub(core, 'getInput')
         saveStateStub = sinon.stub(core, 'saveState')
+        setOutputStub = sinon.stub(core, 'setOutput')
         sinon.stub(core, 'warning')
         startTunnelStub = sinon.stub(container, 'startTunnel')
     })
@@ -21,14 +23,25 @@ describe('index.run', () => {
         sinon.restore()
     })
 
-    it('saves container ID on first-attempt success', async () => {
+    it('saves container ID and exposes outputs on first-attempt success', async () => {
         getInputStub.withArgs('retryTimeout').returns('10')
+        getInputStub.withArgs('tunnelIdentifier').returns('my-tunnel')
         startTunnelStub.resolves('container-abc')
 
         await run()
 
         assert.ok(saveStateStub.calledOnceWith('containerId', 'container-abc'))
         assert.ok(startTunnelStub.calledOnce)
+        assert.ok(setOutputStub.calledWith('container-id', 'container-abc'))
+        assert.ok(setOutputStub.calledWith('tunnel-identifier', 'my-tunnel'))
+        const logCall = setOutputStub
+            .getCalls()
+            .find(c => c.args[0] === 'log-file')
+        assert.ok(logCall, 'log-file output should be set')
+        assert.ok(
+            typeof logCall.args[1] === 'string' &&
+                logCall.args[1].endsWith('tb-tunnel.log')
+        )
     })
 
     it('retries after failure and succeeds', async () => {

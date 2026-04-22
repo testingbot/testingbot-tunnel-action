@@ -10,18 +10,23 @@ permissions:
 jobs:
     unit:
         runs-on: ubuntu-latest
-        name: Unit Tests
+        name: Unit Tests (Node ${{ matrix.node-version }})
+        strategy:
+            fail-fast: false
+            matrix:
+                node-version: [20, 22]
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
               with:
-                node-version: 20
+                node-version: ${{ matrix.node-version }}
                 cache: 'npm'
             - run: npm ci
             - run: npm run format-check
             - run: npm run lint
             - run: npm test
             - name: Verify dist/ is up to date
+              if: matrix.node-version == 20
               run: |
                 npm run build
                 git diff --exit-code dist/ || (

@@ -1,5 +1,6 @@
-import {getInput, saveState, setFailed, warning} from '@actions/core'
-import {startTunnel} from './container'
+import {getInput, saveState, setFailed, setOutput, warning} from '@actions/core'
+import {join} from 'path'
+import {startTunnel, TMP_DIR_HOST} from './container'
 
 export const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
     a => a * 1000
@@ -14,6 +15,9 @@ export async function run(): Promise<void> {
         try {
             const containerId = await startTunnel()
             saveState('containerId', containerId)
+            setOutput('container-id', containerId)
+            setOutput('tunnel-identifier', getInput('tunnelIdentifier'))
+            setOutput('log-file', join(TMP_DIR_HOST, 'tb-tunnel.log'))
             return
         } catch (e) {
             if (Date.now() - startTime >= retryTimeout) {

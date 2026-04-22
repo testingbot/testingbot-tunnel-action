@@ -67,6 +67,13 @@ inputs:
         description: Upload the TestingBot log file as artifact
         required: false
         default: 'true'
+outputs:
+    container-id:
+        description: Docker container ID of the running TestingBot Tunnel
+    tunnel-identifier:
+        description: The tunnel identifier (echoed from the tunnelIdentifier input)
+    log-file:
+        description: Absolute path to the tunnel log file on the runner
 runs:
     using: 'node20'
     main: 'dist/main/index.js'
