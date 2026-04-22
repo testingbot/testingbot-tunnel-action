@@ -118,9 +118,22 @@ export async function stopTunnel(containerId: string): Promise<void> {
     info('Finished stopping TestingBot Tunnel')
 }
 
+// Exposed as an object so tests can replace the factory without needing to
+// import `@actions/artifact` themselves (which runs into ESM/CJS resolution
+// issues on some Node versions).
+export const artifactDeps = {
+    createClient: (): {
+        uploadArtifact: (
+            name: string,
+            files: string[],
+            rootDir: string
+        ) => Promise<unknown>
+    } => new DefaultArtifactClient()
+}
+
 export async function uploadLog(): Promise<void> {
     info('Uploading artifacts')
-    const artifactClient = new DefaultArtifactClient()
+    const artifactClient = artifactDeps.createClient()
     const artifactName = 'testingbot-tunnel.log'
 
     try {

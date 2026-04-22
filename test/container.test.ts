@@ -3,11 +3,11 @@ import {strict as assert} from 'assert'
 import * as sinon from 'sinon'
 import * as core from '@actions/core'
 import * as actionsExec from '@actions/exec'
-import * as artifact from '@actions/artifact'
 import * as fs from 'fs'
 import {join} from 'path'
 
 import {
+    artifactDeps,
     buildOptions,
     readyPoller,
     stopTunnel,
@@ -215,10 +215,10 @@ describe('uploadLog', () => {
     beforeEach(() => {
         sinon.stub(core, 'info')
         sinon.stub(core, 'warning')
-        uploadArtifactStub = sinon.stub(
-            artifact.DefaultArtifactClient.prototype,
-            'uploadArtifact'
-        )
+        uploadArtifactStub = sinon.stub()
+        sinon.stub(artifactDeps, 'createClient').returns({
+            uploadArtifact: uploadArtifactStub
+        })
     })
 
     afterEach(() => {
