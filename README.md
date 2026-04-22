@@ -84,6 +84,30 @@ Bypass TestingBot Caching Proxy running on the tunnel VM.
 
 Do not start a local proxy (requires user provided proxy server on port 8087).
 
+### `noBump`:
+
+Do not perform SSL bumping.
+
+### `extraHeaders`:
+
+JSON string of extra headers to inject into tunnel requests. Example: `'{"X-My-Header":"value"}'`.
+
+### `hubPort`:
+
+Connect to port 80 on the TestingBot hub instead of the default 4444.
+
+### `metricsPort`:
+
+Port to expose tunnel metrics on. Default: 8003.
+
+### `shared`:
+
+Share this tunnel with other users in your team. By default, tunnels are private.
+
+### `web`:
+
+Point to a directory to serve as a local webserver. Useful for testing static content without running your own HTTP server.
+
 ### `tunnelIdentifier`:
 
 Add an identifier to this tunnel connection.

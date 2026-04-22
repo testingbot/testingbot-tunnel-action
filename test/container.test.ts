@@ -56,15 +56,21 @@ describe('buildOptions', () => {
     it('should include flag options without a value', async () => {
         getInputStub.withArgs('debug', sinon.match.any).returns('true')
         getInputStub.withArgs('noCache', sinon.match.any).returns('true')
+        getInputStub.withArgs('noBump', sinon.match.any).returns('true')
+        getInputStub.withArgs('shared', sinon.match.any).returns('true')
         getInputStub.returns('')
 
         const opts = buildOptions()
 
         assert.ok(opts.includes('--debug'))
-        assert.ok(opts.includes('--no-cache'))
+        assert.ok(opts.includes('--nocache'))
+        assert.ok(opts.includes('--nobump'))
+        assert.ok(opts.includes('--shared'))
         // flag options should not have =value
         assert.ok(!opts.some(o => o.startsWith('--debug=')))
-        assert.ok(!opts.some(o => o.startsWith('--no-cache=')))
+        assert.ok(!opts.some(o => o.startsWith('--nocache=')))
+        assert.ok(!opts.some(o => o.startsWith('--nobump=')))
+        assert.ok(!opts.some(o => o.startsWith('--shared=')))
     })
 
     it('should only contain logfile and readyfile when nothing else is set', async () => {
@@ -89,6 +95,12 @@ describe('buildOptions', () => {
         getInputStub.withArgs('pac', sinon.match.any).returns('http://pac.url')
         getInputStub.withArgs('sePort', sinon.match.any).returns('4446')
         getInputStub.withArgs('localProxy', sinon.match.any).returns('9090')
+        getInputStub.withArgs('hubPort', sinon.match.any).returns('80')
+        getInputStub.withArgs('metricsPort', sinon.match.any).returns('9003')
+        getInputStub.withArgs('web', sinon.match.any).returns('/tmp/www')
+        getInputStub
+            .withArgs('extraHeaders', sinon.match.any)
+            .returns('{"X-Foo":"bar"}')
         getInputStub
             .withArgs('proxy', sinon.match.any)
             .returns('proxy.host:8080')
@@ -106,6 +118,10 @@ describe('buildOptions', () => {
         assert.ok(opts.includes('--pac=http://pac.url'))
         assert.ok(opts.includes('--se-port=4446'))
         assert.ok(opts.includes('--localproxy=9090'))
+        assert.ok(opts.includes('--hubport=80'))
+        assert.ok(opts.includes('--metrics-port=9003'))
+        assert.ok(opts.includes('--web=/tmp/www'))
+        assert.ok(opts.includes('--extra-headers={"X-Foo":"bar"}'))
         assert.ok(opts.includes('--proxy=proxy.host:8080'))
         assert.ok(opts.includes('--proxy-userpwd=u:p'))
         assert.ok(opts.includes('--fast-fail-regexps=*.example.com'))

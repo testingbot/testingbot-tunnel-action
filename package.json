@@ -47,7 +47,7 @@
     "sinon": "^21.0.3",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2",
-    "webdriverio": "^7.5.2"
+    "webdriverio": "^9.27.0"
   },
   "overrides": {
     "diff": ">=8.0.3",

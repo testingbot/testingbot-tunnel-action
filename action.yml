@@ -36,17 +36,29 @@ inputs:
     doctor:
         description: Perform sanity/health checks to detect possible misconfiguration or problems.
         required: false
+    extraHeaders:
+        description: "Inject extra headers in the requests the tunnel makes. Value should be a JSON string."
+        required: false
     fastFailRegexps:
         description: Specify domains you don't want to proxy, comma separated.
         required: false
+    hubPort:
+        description: Use this if you want to connect to port 80 on the TestingBot hub instead of the default port 4444.
+        required: false
+    metricsPort:
+        description: Port to expose tunnel metrics on. Default 8003.
+        required: false
+    noBump:
+        description: Do not perform SSL bumping.
+        required: false
+    noCache:
+        description: Bypass TestingBot Caching Proxy running on the tunnel VM.
+        required: false
+    noProxy:
+        description: Do not start a local proxy (requires user provided proxy server on port 8087).
+        required: false
     pac:
         description: Proxy autoconfiguration. Should be a http(s) URL
-        required: false
-    sePort:
-        description: The local port your Selenium test should connect to. Default port is 4445
-        required: false
-    localProxy:
-        description: The port to launch the local proxy on (default 8087).
         required: false
     proxy:
         description: "Specify an upstream proxy: PROXYHOST:PROXYPORT"
@@ -54,14 +66,20 @@ inputs:
     proxyCredentials:
         description: Username and password required to access the proxy configured with proxy
         required: false
-    noCache:
-        description: Bypass TestingBot Caching Proxy running on the tunnel VM.
+    sePort:
+        description: The local port your Selenium test should connect to. Default port is 4445
         required: false
-    noProxy:
-        description: Do not start a local proxy (requires user provided proxy server on port 8087)
+    localProxy:
+        description: The port to launch the local proxy on (default 8087).
+        required: false
+    shared:
+        description: Share this tunnel with other users in your team. Defaults to private.
         required: false
     tunnelIdentifier:
         description: A unique identifier for the Tunnel
+        required: false
+    web:
+        description: Point to a directory for testing — starts a local webserver serving that directory.
         required: false
     uploadLogFile:
         description: Upload the TestingBot log file as artifact

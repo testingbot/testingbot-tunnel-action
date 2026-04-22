@@ -18,20 +18,39 @@
         "flag": true
     },
     {
+        "actionOption": "extraHeaders",
+        "dockerOption": "extra-headers"
+    },
+    {
         "actionOption": "fastFailRegexps",
         "dockerOption": "fast-fail-regexps"
     },
     {
+        "actionOption": "hubPort",
+        "dockerOption": "hubport"
+    },
+    {
+        "actionOption": "metricsPort",
+        "dockerOption": "metrics-port"
+    },
+    {
+        "actionOption": "noBump",
+        "dockerOption": "nobump",
+        "flag": true
+    },
+    {
+        "actionOption": "noCache",
+        "dockerOption": "nocache",
+        "flag": true
+    },
+    {
+        "actionOption": "noProxy",
+        "dockerOption": "noproxy",
+        "flag": true
+    },
+    {
         "actionOption": "pac",
         "dockerOption": "pac"
-    },
-    {
-        "actionOption": "sePort",
-        "dockerOption": "se-port"
-    },
-    {
-        "actionOption": "localProxy",
-        "dockerOption": "localproxy"
     },
     {
         "actionOption": "proxy",
@@ -42,17 +61,24 @@
         "dockerOption": "proxy-userpwd"
     },
     {
-        "actionOption": "noCache",
-        "dockerOption": "no-cache",
-        "flag": true
+        "actionOption": "sePort",
+        "dockerOption": "se-port"
     },
     {
-        "actionOption": "noProxy",
-        "dockerOption": "no-proxy",
+        "actionOption": "localProxy",
+        "dockerOption": "localproxy"
+    },
+    {
+        "actionOption": "shared",
+        "dockerOption": "shared",
         "flag": true
     },
     {
         "actionOption": "tunnelIdentifier",
         "dockerOption": "tunnel-identifier"
+    },
+    {
+        "actionOption": "web",
+        "dockerOption": "web"
     }
 ]

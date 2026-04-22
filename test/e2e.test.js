@@ -1,35 +1,36 @@
-const assert = require('assert')
-const { remote } = require('webdriverio')
+const {strict: assert} = require('assert')
+const {remote} = require('webdriverio')
 
-let browser
-;(async () => {
-    browser = await remote({
+async function main() {
+    const browser = await remote({
         user: process.env.TB_KEY,
         key: process.env.TB_SECRET,
+        logLevel: 'warn',
         capabilities: {
             browserName: 'chrome',
-            platformName: 'Windows 10',
             browserVersion: 'latest',
+            platformName: 'Windows 10',
             'tb:options': {
                 'tunnel-identifier': 'github-action-tunnel',
-                build: `Build #${process.env.GITHUB_RUN_NUMBER}`
+                build: `Build #${process.env.GITHUB_RUN_NUMBER ?? 'local'}`,
+                name: 'testingbot-tunnel-action E2E'
             }
         }
     })
 
-    await browser.url('http://localhost:8080')
+    try {
+        await browser.url('http://localhost:8080')
+        const body = await browser.$('body')
+        assert.equal(await body.getText(), 'Hello from TestingBot!')
+    } finally {
+        await browser.deleteSession()
+    }
+}
 
-    const body = await browser.$('body')
-    assert.equal(await body.getText(), 'Hello from TestingBot!')
-
-    await browser.deleteSession()
-})().then(
+main().then(
     () => process.exit(0),
-    async (e) => {
-        console.error(e)
-        if (browser) {
-            await browser.deleteSession()
-        }
+    err => {
+        console.error(err)
         process.exit(1)
     }
 )
