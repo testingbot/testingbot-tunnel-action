@@ -93,6 +93,6 @@ outputs:
     log-file:
         description: Absolute path to the tunnel log file on the runner
 runs:
-    using: 'node20'
+    using: 'node24'
     main: 'dist/main/index.js'
     post: 'dist/post/index.js'

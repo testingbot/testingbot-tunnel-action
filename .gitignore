@@ -1,5 +1,8 @@
 node_modules
 
+# Compiled test output
+test-build/
+
 # OS / editor
 .DS_Store
 

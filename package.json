@@ -15,15 +15,18 @@
     "format-check": "prettier --check '**/*.ts'",
     "lint": "eslint 'src/**/*.ts'",
     "build": "ncc build src/index.ts -o dist/main && ncc build src/post.ts -o dist/post",
+    "pretest": "npm run build:test",
     "test": "mocha --grep @slow --invert",
+    "pretest:slow": "npm run build:test",
     "test:slow": "mocha --grep @slow --timeout 75000",
+    "build:test": "tsc -p tsconfig.test.json && cp src/options.json test-build/src/options.json",
     "test:e2e": "http-server ./test -p 8080 > /dev/null 2>&1 & node ./test/e2e.test.js",
     "all": "npm run build && npm run format && npm run lint && npm run test"
   },
   "author": "Jochen Delabie <jochen@testingbot.com>",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "keywords": [
     "testingbot",
@@ -45,7 +48,6 @@
     "mocha": "^11.7.5",
     "prettier": "^3.8.3",
     "sinon": "^21.0.3",
-    "ts-node": "^10.9.2",
     "typescript": "^6.0.2",
     "webdriverio": "^9.27.0"
   },
