@@ -1,6 +1,6 @@
 {
   "name": "testingbot-tunnel-action",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Set up the TestingBot Test Environment",
   "homepage": "https://github.com/testingbot/testingbot-tunnel-action#readme",
   "bugs": {
