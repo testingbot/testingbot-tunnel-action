@@ -8,6 +8,7 @@ import {join} from 'path'
 
 import {
     artifactDeps,
+    buildMounts,
     buildOptions,
     buildSecretEnv,
     ContainerExitedError,
@@ -16,6 +17,7 @@ import {
     parseBooleanInput,
     pollDeps,
     readyPoller,
+    runDoctor,
     stopTunnel,
     uploadLog,
     startTunnel
@@ -216,6 +218,190 @@ describe('buildOptions (boolean flags)', () => {
         const opts = buildOptions()
 
         assert.equal(opts.filter(o => o === '--debug').length, 1)
+    })
+})
+
+describe('buildOptions (tunnel 5.x inputs)', () => {
+    let getInputStub: sinon.SinonStub
+    const originalWorkspace = process.env['GITHUB_WORKSPACE']
+
+    beforeEach(() => {
+        getInputStub = sinon.stub(core, 'getInput')
+        sinon.stub(core, 'isDebug').returns(false)
+        process.env['GITHUB_WORKSPACE'] = '/home/runner/work/repo'
+    })
+
+    afterEach(() => {
+        sinon.restore()
+        if (originalWorkspace === undefined) {
+            delete process.env['GITHUB_WORKSPACE']
+        } else {
+            process.env['GITHUB_WORKSPACE'] = originalWorkspace
+        }
+    })
+
+    it('maps the new 5.x value options', async () => {
+        getInputStub
+            .withArgs('allowHosts', sinon.match.any)
+            .returns('staging.example.com,*.internal')
+        getInputStub
+            .withArgs('localhostPolicy', sinon.match.any)
+            .returns('deny')
+        getInputStub.withArgs('sshConnections', sinon.match.any).returns('2')
+        getInputStub.withArgs('logHttp', sinon.match.any).returns('proxy:url')
+        getInputStub.withArgs('logFormat', sinon.match.any).returns('json')
+        getInputStub
+            .withArgs('sshHostKeyPolicy', sinon.match.any)
+            .returns('require')
+        getInputStub.returns('')
+
+        const opts = buildOptions()
+
+        assert.ok(opts.includes('--allow-hosts=staging.example.com,*.internal'))
+        assert.ok(opts.includes('--localhost-policy=deny'))
+        assert.ok(opts.includes('--ssh-connections=2'))
+        assert.ok(opts.includes('--log-http=proxy:url'))
+        assert.ok(opts.includes('--log-format=json'))
+        assert.ok(opts.includes('--ssh-host-key-policy=require'))
+    })
+
+    it('repeats multi-line options once per non-empty line', async () => {
+        getInputStub
+            .withArgs('header', sinon.match.any)
+            .returns('X-Env: staging\n\n  -Cookie  \n')
+        getInputStub
+            .withArgs('responseHeader', sinon.match.any)
+            .returns('-Content-Security-Policy')
+        getInputStub.returns('')
+
+        const opts = buildOptions()
+
+        assert.deepEqual(
+            opts.filter(o => o.startsWith('--header=')),
+            ['--header=X-Env: staging', '--header=-Cookie']
+        )
+        assert.ok(opts.includes('--response-header=-Content-Security-Policy'))
+    })
+
+    it('resolves path inputs against the workspace and leaves URLs alone', async () => {
+        getInputStub.withArgs('web', sinon.match.any).returns('public')
+        getInputStub
+            .withArgs('cacertFile', sinon.match.any)
+            .returns('/etc/ca.pem')
+        getInputStub
+            .withArgs('pacLocal', sinon.match.any)
+            .returns('https://corp.example/proxy.pac')
+        getInputStub.returns('')
+
+        const opts = buildOptions()
+
+        assert.ok(opts.includes('--web=/home/runner/work/repo/public'))
+        assert.ok(opts.includes('--cacert-file=/etc/ca.pem'))
+        assert.ok(opts.includes('--pac-local=https://corp.example/proxy.pac'))
+        assert.deepEqual(buildMounts(), [
+            '-v',
+            '/home/runner/work/repo/public:/home/runner/work/repo/public:ro',
+            '-v',
+            '/etc/ca.pem:/etc/ca.pem:ro'
+        ])
+    })
+
+    it('appends extraArgs verbatim, one per line', async () => {
+        getInputStub
+            .withArgs('extraArgs')
+            .returns('--http-dial-timeout=10\n--dns-round-robin\n')
+        getInputStub.returns('')
+
+        const opts = buildOptions()
+
+        assert.deepEqual(opts.slice(-2), [
+            '--http-dial-timeout=10',
+            '--dns-round-robin'
+        ])
+    })
+
+    it('never passes --doctor to the tunnel run', async () => {
+        getInputStub.withArgs('doctor', sinon.match.any).returns('true')
+        getInputStub.returns('')
+
+        assert.ok(!buildOptions().includes('--doctor'))
+    })
+
+    it('omits the log and ready file options when withFiles is false', async () => {
+        getInputStub.returns('')
+
+        assert.deepEqual(buildOptions(false), [])
+    })
+
+    it('forwards metricsAuth and proxyTestingbotCredentials as secret env vars', async () => {
+        sinon.stub(core, 'setSecret')
+        getInputStub.withArgs('metricsAuth', sinon.match.any).returns('m:pw')
+        getInputStub
+            .withArgs('proxyTestingbotCredentials', sinon.match.any)
+            .returns('t:pw')
+        getInputStub.returns('')
+
+        assert.deepEqual(buildSecretEnv(), {
+            TESTINGBOT_PROXY_TESTINGBOT_USERPWD: 't:pw',
+            TESTINGBOT_METRICS_AUTH: 'm:pw'
+        })
+        assert.ok(!buildOptions().some(o => o.includes('pw')))
+    })
+})
+
+describe('runDoctor', () => {
+    let execStub: sinon.SinonStub
+    let getInputStub: sinon.SinonStub
+    let warningStub: sinon.SinonStub
+
+    beforeEach(() => {
+        sinon.stub(core, 'info')
+        sinon.stub(core, 'setSecret')
+        sinon.stub(core, 'isDebug').returns(false)
+        warningStub = sinon.stub(core, 'warning')
+        getInputStub = sinon.stub(core, 'getInput')
+        getInputStub.withArgs('key', sinon.match.any).returns('my-key')
+        getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
+        getInputStub.withArgs('tbVersion').returns('5.1')
+        execStub = sinon.stub(actionsExec, 'exec').resolves(0)
+    })
+
+    afterEach(() => {
+        sinon.restore()
+    })
+
+    it('does nothing unless doctor is true', async () => {
+        getInputStub.returns('')
+
+        await runDoctor()
+
+        assert.ok(execStub.notCalled)
+    })
+
+    it('runs --doctor in a one-off container without log/ready files', async () => {
+        getInputStub.withArgs('doctor').returns('true')
+        getInputStub.withArgs('dns', sinon.match.any).returns('8.8.8.8')
+        getInputStub.returns('')
+
+        await runDoctor()
+
+        assert.ok(execStub.calledOnce)
+        const args = execStub.firstCall.args[1] as string[]
+        assert.deepEqual(args.slice(0, 3), ['run', '--rm', '--network=host'])
+        const image = args.indexOf('testingbot/tunnel:5.1')
+        assert.deepEqual(args.slice(image + 1), ['--doctor', '--dns=8.8.8.8'])
+        assert.ok(!args.includes('my-key'))
+        assert.ok(execStub.firstCall.args[2].ignoreReturnCode)
+    })
+
+    it('warns, but does not throw, when diagnostics fail', async () => {
+        getInputStub.withArgs('doctor').returns('true')
+        getInputStub.returns('')
+        execStub.resolves(1)
+
+        await runDoctor()
+
+        assert.ok(warningStub.calledWith(sinon.match('exited with code 1')))
     })
 })
 
@@ -547,6 +733,38 @@ describe('startTunnel', () => {
         const runOpts = runCall.args[2] as {env: NodeJS.ProcessEnv}
         assert.equal(runOpts.env.TESTINGBOT_KEY, 'my-key')
         assert.equal(runOpts.env.TESTINGBOT_SECRET, 'my-secret')
+    })
+
+    it('binds the tunnel listeners to loopback by default', async () => {
+        fakeDocker(execStub, readyOnRun('container-id-6'))
+
+        await startTunnel(workDir)
+
+        const runArgs = dockerCalls(execStub, 'run')[0]
+        assert.ok(runArgs.includes('TESTINGBOT_BIND_ADDRESS=127.0.0.1'))
+    })
+
+    it('uses the bindAddress input when set', async () => {
+        getInputStub.withArgs('bindAddress').returns('0.0.0.0')
+        fakeDocker(execStub, readyOnRun('container-id-7'))
+
+        await startTunnel(workDir)
+
+        const runArgs = dockerCalls(execStub, 'run')[0]
+        assert.ok(runArgs.includes('TESTINGBOT_BIND_ADDRESS=0.0.0.0'))
+    })
+
+    it('mounts the web directory read-only before the image name', async () => {
+        getInputStub.withArgs('web', sinon.match.any).returns('/srv/site')
+        fakeDocker(execStub, readyOnRun('container-id-8'))
+
+        await startTunnel(workDir)
+
+        const runArgs = dockerCalls(execStub, 'run')[0]
+        const mount = runArgs.indexOf('/srv/site:/srv/site:ro')
+        assert.ok(mount > 0)
+        assert.ok(mount < runArgs.indexOf('testingbot/tunnel:latest'))
+        assert.ok(runArgs.includes('--web=/srv/site'))
     })
 
     it('should forward auth/proxy credentials as env vars, not CLI args', async () => {
