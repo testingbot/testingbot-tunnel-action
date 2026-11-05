@@ -9,10 +9,8 @@ import {
 import {join, resolve as resolvePath} from 'path'
 import {tmpdir} from 'os'
 import {randomBytes} from 'crypto'
-import {getInput, info, isDebug, setSecret, warning} from '@actions/core'
-import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
-import {DefaultArtifactClient} from '@actions/artifact'
+import {toolkit} from './toolkit'
 
 const TMP_DIR_CONTAINER = '/tmp'
 export const LOG_FILE_NAME = 'tb-tunnel.log'
@@ -106,7 +104,7 @@ export function resolveHostPath(value: string): string {
 }
 
 function optionValues(optionMapping: OptionMapping): string[] {
-    const input = getInput(optionMapping.actionOption, {
+    const input = toolkit.getInput(optionMapping.actionOption, {
         required: optionMapping.required
     })
     const values = optionMapping.multiple
@@ -139,7 +137,7 @@ export function buildOptions(withFiles = true): string[] {
             continue
         }
         if (optionMapping.flag) {
-            const input = getInput(optionMapping.actionOption, {
+            const input = toolkit.getInput(optionMapping.actionOption, {
                 required: optionMapping.required
             })
             if (parseBooleanInput(optionMapping.actionOption, input)) {
@@ -152,12 +150,12 @@ export function buildOptions(withFiles = true): string[] {
         }
     }
 
-    if (isDebug() && !params.includes('--debug')) {
+    if (toolkit.isDebug() && !params.includes('--debug')) {
         params.push('--debug')
     }
 
     // Escape hatch for tunnel options this action has no input for yet.
-    params.push(...inputLines(getInput('extraArgs')))
+    params.push(...inputLines(toolkit.getInput('extraArgs')))
 
     return params
 }
@@ -193,13 +191,13 @@ export function buildSecretEnv(): {[key: string]: string} {
         if (!optionMapping.env) {
             continue
         }
-        const input = getInput(optionMapping.actionOption, {
+        const input = toolkit.getInput(optionMapping.actionOption, {
             required: optionMapping.required
         })
         if (input === '') {
             continue
         }
-        setSecret(input)
+        toolkit.setSecret(input)
         env[optionMapping.env] = input
     }
     return env
@@ -217,17 +215,18 @@ export function buildSecretEnv(): {[key: string]: string} {
  * know the option, keep working.
  */
 function containerEnv(): {args: string[]; env: {[key: string]: string}} {
-    const key = getInput('key', {required: true})
-    const secret = getInput('secret', {required: true})
-    setSecret(key)
-    setSecret(secret)
+    const key = toolkit.getInput('key', {required: true})
+    const secret = toolkit.getInput('secret', {required: true})
+    toolkit.setSecret(key)
+    toolkit.setSecret(secret)
 
     const secretEnv: {[key: string]: string} = {
         TESTINGBOT_KEY: key,
         TESTINGBOT_SECRET: secret,
         ...buildSecretEnv()
     }
-    const bindAddress = getInput('bindAddress').trim() || DEFAULT_BIND_ADDRESS
+    const bindAddress =
+        toolkit.getInput('bindAddress').trim() || DEFAULT_BIND_ADDRESS
 
     const baseEnv: {[key: string]: string} = {}
     for (const [envKey, envValue] of Object.entries(process.env)) {
@@ -247,7 +246,7 @@ function containerEnv(): {args: string[]; env: {[key: string]: string}} {
 }
 
 function imageName(): string {
-    return `testingbot/tunnel:${getInput('tbVersion') || 'latest'}`
+    return `testingbot/tunnel:${toolkit.getInput('tbVersion') || 'latest'}`
 }
 
 /**
@@ -257,12 +256,12 @@ function imageName(): string {
  * Diagnostics never fail the step.
  */
 export async function runDoctor(): Promise<void> {
-    if (!parseBooleanInput('doctor', getInput('doctor'))) {
+    if (!parseBooleanInput('doctor', toolkit.getInput('doctor'))) {
         return
     }
-    info('Running TestingBot Tunnel diagnostics (--doctor)...')
+    toolkit.info('Running TestingBot Tunnel diagnostics (--doctor)...')
     const {args, env} = containerEnv()
-    const exitCode = await exec(
+    const exitCode = await toolkit.exec(
         'docker',
         [
             'run',
@@ -277,7 +276,9 @@ export async function runDoctor(): Promise<void> {
         {env, ignoreReturnCode: true}
     )
     if (exitCode !== 0) {
-        warning(`TestingBot Tunnel diagnostics exited with code ${exitCode}`)
+        toolkit.warning(
+            `TestingBot Tunnel diagnostics exited with code ${exitCode}`
+        )
     }
 }
 
@@ -295,7 +296,7 @@ async function execWithReturn(
 ): Promise<{exitCode: number; output: string}> {
     let output = ''
     const {includeStderr, ...execOptions} = extraOptions ?? {}
-    const exitCode = await exec(commandLine, args, {
+    const exitCode = await toolkit.exec(commandLine, args, {
         ...execOptions,
         listeners: {
             stdout: (data: Buffer) => {
@@ -349,7 +350,7 @@ export async function readyPoller(
     containerId: string
 ): Promise<void> {
     const readyFile = join(workDir, READY_FILE_NAME)
-    const timeoutSeconds = parseInt(getInput('readyTimeout'), 10) || 60
+    const timeoutSeconds = parseInt(toolkit.getInput('readyTimeout'), 10) || 60
     const deadline = Date.now() + timeoutSeconds * 1000
 
     for (;;) {
@@ -386,34 +387,21 @@ export class ContainerExitedError extends Error {
 }
 
 export async function stopTunnel(containerId: string): Promise<void> {
-    info(`Stopping TestingBot Tunnel ${containerId}...`)
+    toolkit.info(`Stopping TestingBot Tunnel ${containerId}...`)
     const state = await getContainerState(containerId)
 
     if (state.running) {
-        await exec('docker', ['container', 'stop', containerId])
+        await toolkit.exec('docker', ['container', 'stop', containerId])
     } else {
-        info('TestingBot Tunnel does not appear to be running.')
+        toolkit.info('TestingBot Tunnel does not appear to be running.')
     }
     // The container is not started with --rm (so its exit code and output
     // can be inspected after a failed start); remove it here.
-    await exec('docker', ['container', 'rm', '--force', containerId], {
+    await toolkit.exec('docker', ['container', 'rm', '--force', containerId], {
         silent: true,
         ignoreReturnCode: true
     })
-    info('Finished stopping TestingBot Tunnel')
-}
-
-// Exposed as an object so tests can replace the factory without needing to
-// import `@actions/artifact` themselves (which runs into ESM/CJS resolution
-// issues on some Node versions).
-export const artifactDeps = {
-    createClient: (): {
-        uploadArtifact: (
-            name: string,
-            files: string[],
-            rootDir: string
-        ) => Promise<unknown>
-    } => new DefaultArtifactClient()
+    toolkit.info('Finished stopping TestingBot Tunnel')
 }
 
 export const DEFAULT_LOG_ARTIFACT_NAME = 'testingbot-tunnel.log'
@@ -443,27 +431,27 @@ export async function uploadLog(
 ): Promise<void> {
     const logFile = logFilePath(workDir)
     if (!existsSync(logFile)) {
-        info('No TestingBot Tunnel log file to upload.')
+        toolkit.info('No TestingBot Tunnel log file to upload.')
         return
     }
-    const artifactClient = artifactDeps.createClient()
+    const artifactClient = toolkit.createArtifactClient()
     const name = sanitizeArtifactName(artifactName)
 
     try {
-        info(`Uploading TestingBot Tunnel log as artifact "${name}"`)
+        toolkit.info(`Uploading TestingBot Tunnel log as artifact "${name}"`)
         await artifactClient.uploadArtifact(name, [logFile], workDir)
         return
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        info(`Uploading artifact "${name}" failed: ${message}`)
+        toolkit.info(`Uploading artifact "${name}" failed: ${message}`)
     }
 
     const fallbackName = `${name}-${uniqueSuffix()}`
     try {
-        info(`Retrying upload as artifact "${fallbackName}"`)
+        toolkit.info(`Retrying upload as artifact "${fallbackName}"`)
         await artifactClient.uploadArtifact(fallbackName, [logFile], workDir)
     } catch (err) {
-        warning(err instanceof Error ? err : String(err))
+        toolkit.warning(err instanceof Error ? err : String(err))
     }
 }
 
@@ -481,7 +469,7 @@ const EXIT_CODE_INVALID_OPTIONS = 2
 
 export async function startTunnel(workDir: string): Promise<string> {
     const containerName = imageName()
-    await exec('docker', ['pull', containerName])
+    await toolkit.exec('docker', ['pull', containerName])
 
     // Credentials are masked and forwarded to the container via env vars.
     // The tunnel binary reads TESTINGBOT_KEY / TESTINGBOT_SECRET when no
@@ -527,7 +515,7 @@ export async function startTunnel(workDir: string): Promise<string> {
             {silent: true, ignoreReturnCode: true, includeStderr: true}
         )
         if (consoleOutput.trim() !== '') {
-            warning(`TestingBot Tunnel output:\n${consoleOutput}`)
+            toolkit.warning(`TestingBot Tunnel output:\n${consoleOutput}`)
         }
         await stopTunnel(containerId)
 
@@ -547,14 +535,18 @@ export async function startTunnel(workDir: string): Promise<string> {
                 .subarray(logOffset)
                 .toString('utf-8')
 
-            ;(hasError ? warning : info)(`TestingBot Tunnel log: ${log}`)
+            ;(hasError ? toolkit.warning : toolkit.info)(
+                `TestingBot Tunnel log: ${log}`
+            )
         } catch (errLog) {
             if (hasError) {
-                warning(errLog instanceof Error ? errLog : String(errLog))
+                toolkit.warning(
+                    errLog instanceof Error ? errLog : String(errLog)
+                )
             }
         }
     }
 
-    info('TestingBot Tunnel is ready')
+    toolkit.info('TestingBot Tunnel is ready')
     return containerId
 }
