@@ -10,13 +10,55 @@ import {
     artifactDeps,
     buildOptions,
     buildSecretEnv,
+    ContainerExitedError,
+    createWorkDir,
+    NonRetryableError,
     parseBooleanInput,
+    pollDeps,
     readyPoller,
     stopTunnel,
     uploadLog,
-    startTunnel,
-    TMP_DIR_HOST
+    startTunnel
 } from '../src/container'
+
+type ExecOpts = {
+    listeners?: {
+        stdout?: (data: Buffer) => void
+        stderr?: (data: Buffer) => void
+    }
+}
+type DockerResult = {stdout?: string; stderr?: string; code?: number}
+type DockerHandler = (args: string[]) => DockerResult | void
+
+/**
+ * Routes stubbed `exec('docker', [sub, ...])` calls to a handler per docker
+ * sub-command (pull, run, inspect, logs, container).
+ */
+function fakeDocker(
+    execStub: sinon.SinonStub,
+    handlers: {[sub: string]: DockerHandler}
+): void {
+    execStub.callsFake(
+        async (cmd: string, args: string[] = [], opts?: ExecOpts) => {
+            const handler = handlers[args[0]]
+            const result = (handler ? handler(args) : undefined) ?? {}
+            if (result.stdout) {
+                opts?.listeners?.stdout?.(Buffer.from(result.stdout))
+            }
+            if (result.stderr) {
+                opts?.listeners?.stderr?.(Buffer.from(result.stderr))
+            }
+            return result.code ?? 0
+        }
+    )
+}
+
+function dockerCalls(execStub: sinon.SinonStub, sub: string): string[][] {
+    return execStub
+        .getCalls()
+        .map(c => c.args[1] as string[])
+        .filter(a => a[0] === sub)
+}
 
 describe('buildOptions', () => {
     let getInputStub: sinon.SinonStub
@@ -230,30 +272,85 @@ describe('buildSecretEnv', () => {
     })
 })
 
-describe('readyPoller', () => {
-    afterEach(() => {
-        // Clean up the ready file if it was created
-        const readyFile = join(TMP_DIR_HOST, 'tb.ready')
+describe('createWorkDir', () => {
+    it('creates a fresh, world-writable directory per call', () => {
+        const a = createWorkDir()
+        const b = createWorkDir()
         try {
-            fs.unlinkSync(readyFile)
-        } catch {
-            // ignore
+            assert.notEqual(a, b)
+            assert.equal(fs.statSync(a).mode & 0o777, 0o777)
+        } finally {
+            fs.rmSync(a, {recursive: true, force: true})
+            fs.rmSync(b, {recursive: true, force: true})
         }
+    })
+})
+
+describe('readyPoller', () => {
+    let workDir: string
+    let execStub: sinon.SinonStub
+    let getInputStub: sinon.SinonStub
+    const originalInterval = pollDeps.intervalMs
+
+    beforeEach(() => {
+        workDir = createWorkDir()
+        pollDeps.intervalMs = 20
+        execStub = sinon.stub(actionsExec, 'exec')
+        getInputStub = sinon.stub(core, 'getInput').returns('')
+    })
+
+    afterEach(() => {
+        sinon.restore()
+        pollDeps.intervalMs = originalInterval
+        fs.rmSync(workDir, {recursive: true, force: true})
     })
 
     it('should resolve when tb.ready file is created', async () => {
-        // Write the file after a short delay
+        fakeDocker(execStub, {inspect: () => ({stdout: 'true 0\n'})})
         setTimeout(() => {
-            fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
+            fs.writeFileSync(join(workDir, 'tb.ready'), '')
         }, 100)
 
-        await readyPoller()
+        await readyPoller(workDir, 'abc')
     })
 
     it('should resolve immediately if tb.ready already exists', async () => {
-        fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
+        fakeDocker(execStub, {inspect: () => ({stdout: 'true 0\n'})})
+        fs.writeFileSync(join(workDir, 'tb.ready'), '')
 
-        await readyPoller()
+        await readyPoller(workDir, 'abc')
+    })
+
+    it('should fail fast when the container exits before becoming ready', async () => {
+        fakeDocker(execStub, {inspect: () => ({stdout: 'false 1\n'})})
+
+        const start = Date.now()
+        await assert.rejects(
+            () => readyPoller(workDir, 'abc'),
+            (err: unknown) =>
+                err instanceof ContainerExitedError && err.exitCode === 1
+        )
+        assert.ok(Date.now() - start < 1000)
+    })
+
+    it('should treat a removed container as exited', async () => {
+        fakeDocker(execStub, {inspect: () => ({code: 1})})
+
+        await assert.rejects(
+            () => readyPoller(workDir, 'abc'),
+            (err: unknown) =>
+                err instanceof ContainerExitedError &&
+                err.exitCode === undefined
+        )
+    })
+
+    it('should time out after readyTimeout seconds', async () => {
+        getInputStub.withArgs('readyTimeout').returns('1')
+        fakeDocker(execStub, {inspect: () => ({stdout: 'true 0\n'})})
+
+        await assert.rejects(() => readyPoller(workDir, 'abc'), {
+            message: 'Timeout Error: waited 1 seconds for tunnel to start.'
+        })
     })
 })
 
@@ -270,55 +367,25 @@ describe('stopTunnel', () => {
         sinon.restore()
     })
 
-    it('should stop a running container', async () => {
-        // First exec call is `docker ps` — simulate returning the container ID
-        execStub
-            .onFirstCall()
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    if (opts?.listeners?.stdout) {
-                        opts.listeners.stdout(Buffer.from('abc123\n'))
-                    }
-                    return 0
-                }
-            )
-        // Second exec call is `docker container stop`
-        execStub.onSecondCall().resolves(0)
+    it('should stop and remove a running container', async () => {
+        fakeDocker(execStub, {inspect: () => ({stdout: 'true 0\n'})})
 
         await stopTunnel('abc123')
 
-        assert.ok(execStub.calledTwice)
-        assert.deepEqual(execStub.secondCall.args[0], 'docker')
-        assert.deepEqual(execStub.secondCall.args[1], [
-            'container',
-            'stop',
-            'abc123'
+        assert.deepEqual(dockerCalls(execStub, 'container'), [
+            ['container', 'stop', 'abc123'],
+            ['container', 'rm', '--force', 'abc123']
         ])
     })
 
-    it('should not stop if container is not running', async () => {
-        execStub
-            .onFirstCall()
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    if (opts?.listeners?.stdout) {
-                        opts.listeners.stdout(Buffer.from(''))
-                    }
-                    return 0
-                }
-            )
+    it('should not stop, but still remove, a container that is not running', async () => {
+        fakeDocker(execStub, {inspect: () => ({stdout: 'false 0\n'})})
 
         await stopTunnel('abc123')
 
-        assert.ok(execStub.calledOnce)
+        assert.deepEqual(dockerCalls(execStub, 'container'), [
+            ['container', 'rm', '--force', 'abc123']
+        ])
         assert.ok(
             infoStub.calledWith(
                 'TestingBot Tunnel does not appear to be running.'
@@ -329,6 +396,7 @@ describe('stopTunnel', () => {
 
 describe('uploadLog', () => {
     let uploadArtifactStub: sinon.SinonStub
+    let workDir: string
 
     beforeEach(() => {
         sinon.stub(core, 'info')
@@ -337,40 +405,52 @@ describe('uploadLog', () => {
         sinon.stub(artifactDeps, 'createClient').returns({
             uploadArtifact: uploadArtifactStub
         })
+        workDir = createWorkDir()
     })
 
     afterEach(() => {
         sinon.restore()
+        fs.rmSync(workDir, {recursive: true, force: true})
     })
 
     it('uploads the artifact with the correct name and path', async () => {
+        fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'log')
         uploadArtifactStub.resolves({id: 1, size: 0})
 
-        await uploadLog()
+        await uploadLog(workDir)
 
         assert.ok(uploadArtifactStub.calledOnce)
         const [name, files, rootDir] = uploadArtifactStub.firstCall.args
         assert.equal(name, 'testingbot-tunnel.log')
-        assert.equal(files.length, 1)
-        assert.ok(files[0].endsWith('tb-tunnel.log'))
-        assert.equal(rootDir, TMP_DIR_HOST)
+        assert.deepEqual(files, [join(workDir, 'tb-tunnel.log')])
+        assert.equal(rootDir, workDir)
+    })
+
+    it('skips the upload when there is no log file', async () => {
+        await uploadLog(workDir)
+
+        assert.ok(uploadArtifactStub.notCalled)
     })
 
     it('swallows errors so post-action does not fail', async () => {
+        fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'log')
         uploadArtifactStub.rejects(new Error('upload failed'))
 
         // uploadLog catches errors internally — should not throw
-        await uploadLog()
+        await uploadLog(workDir)
     })
 })
 
 describe('startTunnel', () => {
     let execStub: sinon.SinonStub
     let getInputStub: sinon.SinonStub
+    let warningStub: sinon.SinonStub
+    let workDir: string
+    const originalInterval = pollDeps.intervalMs
 
     beforeEach(() => {
         sinon.stub(core, 'info')
-        sinon.stub(core, 'warning')
+        warningStub = sinon.stub(core, 'warning')
         sinon.stub(core, 'isDebug').returns(false)
         sinon.stub(core, 'setSecret')
         getInputStub = sinon.stub(core, 'getInput')
@@ -380,135 +460,162 @@ describe('startTunnel', () => {
         getInputStub.returns('')
 
         execStub = sinon.stub(actionsExec, 'exec')
-
-        // Clean up ready file before each test
-        try {
-            fs.unlinkSync(join(TMP_DIR_HOST, 'tb.ready'))
-        } catch {
-            // ignore
-        }
+        workDir = createWorkDir()
+        pollDeps.intervalMs = 20
     })
 
     afterEach(() => {
         sinon.restore()
-        try {
-            fs.unlinkSync(join(TMP_DIR_HOST, 'tb.ready'))
-        } catch {
-            // ignore
-        }
+        pollDeps.intervalMs = originalInterval
+        fs.rmSync(workDir, {recursive: true, force: true})
     })
 
-    it('should pull image, run container, and return container ID', async () => {
-        // docker pull
-        execStub.onFirstCall().resolves(0)
-        // docker run — return container ID via stdout
-        execStub
-            .onSecondCall()
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    if (opts?.listeners?.stdout) {
-                        opts.listeners.stdout(Buffer.from('container-id-123\n'))
-                    }
-                    // Simulate tunnel becoming ready
-                    fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
-                    return 0
-                }
-            )
+    function readyOnRun(id: string): {[sub: string]: DockerHandler} {
+        return {
+            run: () => {
+                fs.writeFileSync(join(workDir, 'tb.ready'), '')
+                return {stdout: `${id}\n`}
+            },
+            inspect: () => ({stdout: 'true 0\n'})
+        }
+    }
 
-        const containerId = await startTunnel()
+    it('should pull image, run container, and return container ID', async () => {
+        fakeDocker(execStub, readyOnRun('container-id-123'))
+
+        const containerId = await startTunnel(workDir)
 
         assert.equal(containerId, 'container-id-123')
-        assert.ok(
-            execStub.firstCall.args[1]?.includes('testingbot/tunnel:latest')
-        )
+        assert.deepEqual(dockerCalls(execStub, 'pull'), [
+            ['pull', 'testingbot/tunnel:latest']
+        ])
 
         // docker run args: forward creds as env vars, never inline them
-        const runArgs = execStub.secondCall.args[1] as string[]
+        const runCall = execStub
+            .getCalls()
+            .find(c => (c.args[1] as string[])[0] === 'run')
+        assert.ok(runCall)
+        const runArgs = runCall.args[1] as string[]
         assert.ok(runArgs.includes('-e'))
         assert.ok(runArgs.includes('TESTINGBOT_KEY'))
         assert.ok(runArgs.includes('TESTINGBOT_SECRET'))
         assert.ok(!runArgs.includes('my-key'))
         assert.ok(!runArgs.includes('my-secret'))
+        assert.ok(runArgs.includes(`${workDir}:/tmp`))
 
         // exec options should carry the env vars so docker can forward them
-        const runOpts = execStub.secondCall.args[2] as {
-            env: NodeJS.ProcessEnv
-        }
+        const runOpts = runCall.args[2] as {env: NodeJS.ProcessEnv}
         assert.equal(runOpts.env.TESTINGBOT_KEY, 'my-key')
         assert.equal(runOpts.env.TESTINGBOT_SECRET, 'my-secret')
     })
 
     it('should forward auth/proxy credentials as env vars, not CLI args', async () => {
         getInputStub.withArgs('auth', sinon.match.any).returns('h:80:u:pw')
-        execStub.onFirstCall().resolves(0)
-        execStub
-            .onSecondCall()
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    opts?.listeners?.stdout?.(Buffer.from('container-id-789\n'))
-                    fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
-                    return 0
-                }
-            )
+        fakeDocker(execStub, readyOnRun('container-id-789'))
 
-        await startTunnel()
+        await startTunnel(workDir)
 
-        const runArgs = execStub.secondCall.args[1] as string[]
+        const runCall = execStub
+            .getCalls()
+            .find(c => (c.args[1] as string[])[0] === 'run')
+        assert.ok(runCall)
+        const runArgs = runCall.args[1] as string[]
         assert.ok(runArgs.includes('TESTINGBOT_AUTH'))
         assert.ok(!runArgs.some(a => a.includes('h:80:u:pw')))
-        const runOpts = execStub.secondCall.args[2] as {
-            env: NodeJS.ProcessEnv
-        }
+        const runOpts = runCall.args[2] as {env: NodeJS.ProcessEnv}
         assert.equal(runOpts.env.TESTINGBOT_AUTH, 'h:80:u:pw')
     })
 
-    it('should stop container and throw on readyPoller timeout @slow', async () => {
-        // docker pull
-        execStub.onFirstCall().resolves(0)
-        // docker run
-        execStub
-            .onSecondCall()
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    if (opts?.listeners?.stdout) {
-                        opts.listeners.stdout(Buffer.from('container-id-456\n'))
-                    }
-                    // Don't create the ready file — will trigger timeout
-                    return 0
-                }
-            )
-        // docker ps (from stopTunnel)
-        execStub
-            .onCall(2)
-            .callsFake(
-                async (
-                    cmd: string,
-                    args?: string[],
-                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
-                ) => {
-                    if (opts?.listeners?.stdout) {
-                        opts.listeners.stdout(Buffer.from('container-id-456\n'))
-                    }
-                    return 0
-                }
-            )
-        // docker container stop
-        execStub.onCall(3).resolves(0)
-
-        await assert.rejects(() => startTunnel(), {
-            message: 'Timeout Error: waited 60 seconds for tunnel to start.'
+    it('should ignore a stale ready file from a previous attempt', async () => {
+        fs.writeFileSync(join(workDir, 'tb.ready'), '')
+        fakeDocker(execStub, {
+            run: () => ({stdout: 'container-id-1\n'}),
+            inspect: () => ({stdout: 'false 1\n'})
         })
-    }).timeout(70000)
+
+        await assert.rejects(() => startTunnel(workDir), ContainerExitedError)
+    })
+
+    it('should print the container output and remove the container on failure', async () => {
+        fakeDocker(execStub, {
+            run: () => ({stdout: 'container-id-2\n'}),
+            inspect: () => ({stdout: 'false 1\n'}),
+            logs: () => ({stderr: 'Creating a new tunnel failed\n'})
+        })
+
+        await assert.rejects(
+            () => startTunnel(workDir),
+            (err: unknown) =>
+                err instanceof ContainerExitedError &&
+                !(err instanceof NonRetryableError)
+        )
+        assert.ok(
+            warningStub.calledWith(sinon.match('Creating a new tunnel failed'))
+        )
+        assert.deepEqual(dockerCalls(execStub, 'container'), [
+            ['container', 'rm', '--force', 'container-id-2']
+        ])
+    })
+
+    it('should only print the current attempt from the log file', async () => {
+        const infoStub = core.info as sinon.SinonStub
+        fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'previous attempt\n')
+        fakeDocker(execStub, {
+            run: () => {
+                fs.appendFileSync(
+                    join(workDir, 'tb-tunnel.log'),
+                    'this attempt\n'
+                )
+                fs.writeFileSync(join(workDir, 'tb.ready'), '')
+                return {stdout: 'container-id-5\n'}
+            },
+            inspect: () => ({stdout: 'true 0\n'})
+        })
+
+        await startTunnel(workDir)
+
+        const logged = infoStub
+            .getCalls()
+            .map(c => String(c.args[0]))
+            .find(m => m.startsWith('TestingBot Tunnel log:'))
+        assert.equal(logged, 'TestingBot Tunnel log: this attempt\n')
+    })
+
+    it('should not retry on invalid command-line options (exit code 2)', async () => {
+        fakeDocker(execStub, {
+            run: () => ({stdout: 'container-id-3\n'}),
+            inspect: () => ({stdout: 'false 2\n'}),
+            logs: () => ({stderr: '--proxy needs a value.\n'})
+        })
+
+        await assert.rejects(() => startTunnel(workDir), NonRetryableError)
+    })
+
+    it('should not retry when credentials are rejected', async () => {
+        fakeDocker(execStub, {
+            run: () => ({stdout: 'container-id-4\n'}),
+            inspect: () => ({stdout: 'false 1\n'}),
+            logs: () => ({
+                stderr: 'Could not start tunnel: Failed : HTTP error code : 401 - {"error":"401 Unauthorized. Please supply correct API key and API secret"}\n'
+            })
+        })
+
+        await assert.rejects(() => startTunnel(workDir), NonRetryableError)
+    })
+
+    it('should stop the container and throw on readyPoller timeout', async () => {
+        getInputStub.withArgs('readyTimeout').returns('1')
+        fakeDocker(execStub, {
+            run: () => ({stdout: 'container-id-456\n'}),
+            inspect: () => ({stdout: 'true 0\n'})
+        })
+
+        await assert.rejects(() => startTunnel(workDir), {
+            message: 'Timeout Error: waited 1 seconds for tunnel to start.'
+        })
+        assert.deepEqual(dockerCalls(execStub, 'container'), [
+            ['container', 'stop', 'container-id-456'],
+            ['container', 'rm', '--force', 'container-id-456']
+        ])
+    })
 })

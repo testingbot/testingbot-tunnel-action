@@ -10,7 +10,7 @@ export async function run(): Promise<void> {
 
     await stopTunnel(containerId)
     if (getInput('uploadLogFile') === 'true') {
-        await uploadLog()
+        await uploadLog(getState('workDir'))
     }
 }
 
