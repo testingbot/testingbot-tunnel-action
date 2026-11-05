@@ -1,2 +1,7 @@
 spec: 'test-build/test/**/*.test.js'
 timeout: 10000
+# The @actions/* packages are ESM-only and only export an "import"
+# condition. The tests are compiled to CommonJS, so let require() resolve
+# that condition (Node 22.12+ can require() ES modules).
+node-option:
+    - 'conditions=import'
