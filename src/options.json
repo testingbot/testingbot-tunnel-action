@@ -13,11 +13,6 @@
         "dockerOption": "dns"
     },
     {
-        "actionOption": "doctor",
-        "dockerOption": "doctor",
-        "flag": true
-    },
-    {
         "actionOption": "extraHeaders",
         "dockerOption": "extra-headers"
     },
@@ -79,6 +74,79 @@
     },
     {
         "actionOption": "web",
-        "dockerOption": "web"
+        "dockerOption": "web",
+        "path": true
+    },
+    {
+        "actionOption": "allowHosts",
+        "dockerOption": "allow-hosts"
+    },
+    {
+        "actionOption": "localhostPolicy",
+        "dockerOption": "localhost-policy"
+    },
+    {
+        "actionOption": "pacLocal",
+        "dockerOption": "pac-local",
+        "path": true
+    },
+    {
+        "actionOption": "pacLocalSha256",
+        "dockerOption": "pac-local-sha256"
+    },
+    {
+        "actionOption": "proxyTestingbot",
+        "dockerOption": "proxy-testingbot"
+    },
+    {
+        "actionOption": "proxyTestingbotCredentials",
+        "env": "TESTINGBOT_PROXY_TESTINGBOT_USERPWD"
+    },
+    {
+        "actionOption": "proxyAuthScheme",
+        "dockerOption": "proxy-auth-scheme"
+    },
+    {
+        "actionOption": "cacertFile",
+        "dockerOption": "cacert-file",
+        "path": true
+    },
+    {
+        "actionOption": "nobumpDomains",
+        "dockerOption": "nobump-domains"
+    },
+    {
+        "actionOption": "header",
+        "dockerOption": "header",
+        "multiple": true
+    },
+    {
+        "actionOption": "responseHeader",
+        "dockerOption": "response-header",
+        "multiple": true
+    },
+    {
+        "actionOption": "logHttp",
+        "dockerOption": "log-http"
+    },
+    {
+        "actionOption": "logFormat",
+        "dockerOption": "log-format"
+    },
+    {
+        "actionOption": "sshHostKey",
+        "dockerOption": "ssh-host-key"
+    },
+    {
+        "actionOption": "sshHostKeyPolicy",
+        "dockerOption": "ssh-host-key-policy"
+    },
+    {
+        "actionOption": "sshConnections",
+        "dockerOption": "ssh-connections"
+    },
+    {
+        "actionOption": "metricsAuth",
+        "env": "TESTINGBOT_METRICS_AUTH"
     }
 ]
