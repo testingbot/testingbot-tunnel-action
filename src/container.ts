@@ -13,9 +13,35 @@ export const TMP_DIR_HOST = process.env['RUNNER_TEMP']
 
 type OptionMapping = {
     actionOption: string
-    dockerOption: string
+    // CLI flag name passed to the tunnel binary (without leading dashes).
+    dockerOption?: string
+    // Environment variable used instead of a CLI flag. Used for values that
+    // carry credentials, so they stay out of `ps aux` / `docker inspect`.
+    env?: string
     required?: boolean
     flag?: boolean
+}
+
+const optionsMapping: OptionMapping[] = optionsMappingJson
+
+/**
+ * Parses a boolean action input. Empty means "not set" (false). Accepts the
+ * same values as `core.getBooleanInput` (YAML 1.2 core schema booleans).
+ */
+export function parseBooleanInput(name: string, value: string): boolean {
+    const trimmed = value.trim()
+    if (trimmed === '') {
+        return false
+    }
+    if (['true', 'True', 'TRUE'].includes(trimmed)) {
+        return true
+    }
+    if (['false', 'False', 'FALSE'].includes(trimmed)) {
+        return false
+    }
+    throw new TypeError(
+        `Input "${name}" must be a boolean (true or false), got "${value}"`
+    )
 }
 
 export function buildOptions(): string[] {
@@ -27,27 +53,50 @@ export function buildOptions(): string[] {
     // do not leak into `ps aux` or `docker inspect` command-lines.
     const params = [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]
 
-    const optionsMapping: OptionMapping[] = optionsMappingJson
-
     for (const optionMapping of optionsMapping) {
+        if (!optionMapping.dockerOption) {
+            continue
+        }
+        const input = getInput(optionMapping.actionOption, {
+            required: optionMapping.required
+        })
+        if (optionMapping.flag) {
+            if (parseBooleanInput(optionMapping.actionOption, input)) {
+                params.push(`--${optionMapping.dockerOption}`)
+            }
+        } else if (input !== '') {
+            params.push(`--${optionMapping.dockerOption}=${input}`)
+        }
+    }
+
+    if (isDebug() && !params.includes('--debug')) {
+        params.push('--debug')
+    }
+
+    return params
+}
+
+/**
+ * Collects options that are forwarded to the tunnel as environment variables
+ * (credential-bearing values). Every value is registered as a secret so it is
+ * masked in the workflow log.
+ */
+export function buildSecretEnv(): {[key: string]: string} {
+    const env: {[key: string]: string} = {}
+    for (const optionMapping of optionsMapping) {
+        if (!optionMapping.env) {
+            continue
+        }
         const input = getInput(optionMapping.actionOption, {
             required: optionMapping.required
         })
         if (input === '') {
             continue
         }
-        if (optionMapping.flag) {
-            params.push(`--${optionMapping.dockerOption}`)
-        } else {
-            params.push(`--${optionMapping.dockerOption}=${input}`)
-        }
+        setSecret(input)
+        env[optionMapping.env] = input
     }
-
-    if (isDebug()) {
-        params.push('--debug')
-    }
-
-    return params
+    return env
 }
 
 export async function readyPoller(): Promise<void> {
@@ -168,6 +217,15 @@ export async function startTunnel(): Promise<string> {
         }
     }
 
+    const secretEnv: {[key: string]: string} = {
+        TESTINGBOT_KEY: key,
+        TESTINGBOT_SECRET: secret,
+        ...buildSecretEnv()
+    }
+    // `-e NAME` (without a value) makes docker read the value from its own
+    // environment, so secrets never appear on the docker command-line.
+    const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name])
+
     const containerId = (
         await execWithReturn(
             'docker',
@@ -176,10 +234,7 @@ export async function startTunnel(): Promise<string> {
                 '--network=host',
                 '--detach',
                 '--rm',
-                '-e',
-                'TESTINGBOT_KEY',
-                '-e',
-                'TESTINGBOT_SECRET',
+                ...envArgs,
                 '-v',
                 `${TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
                 containerName
@@ -187,8 +242,7 @@ export async function startTunnel(): Promise<string> {
             {
                 env: {
                     ...baseEnv,
-                    TESTINGBOT_KEY: key,
-                    TESTINGBOT_SECRET: secret
+                    ...secretEnv
                 }
             }
         )
