@@ -1,7 +1,7 @@
 [
     {
         "actionOption": "auth",
-        "dockerOption": "auth"
+        "env": "TESTINGBOT_AUTH"
     },
     {
         "actionOption": "debug",
@@ -58,7 +58,7 @@
     },
     {
         "actionOption": "proxyCredentials",
-        "dockerOption": "proxy-userpwd"
+        "env": "TESTINGBOT_PROXY_USERPWD"
     },
     {
         "actionOption": "sePort",

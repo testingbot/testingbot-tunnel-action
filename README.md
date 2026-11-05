@@ -39,6 +39,8 @@ jobs:
 ### `auth`:
 
 Performs Basic Authentication for specific hosts, only works with HTTP.
+Format: `host:port:user:password`, comma separated for several.
+The value is masked in logs and passed to the tunnel as the `TESTINGBOT_AUTH` environment variable (not as a command-line argument). Requires tunnel 4.8 or newer.
 
 ### `debug`:
 
@@ -74,7 +76,8 @@ Specify an upstream proxy: PROXYHOST:PROXYPORT
 
 ### `proxyCredentials`:
 
-Username and password required to access the proxy configured with `proxy`.
+Username and password (`user:password`) required to access the proxy configured with `proxy`.
+The value is masked in logs and passed to the tunnel as the `TESTINGBOT_PROXY_USERPWD` environment variable. Requires tunnel 4.8 or newer.
 
 ### `noCache`:
 
@@ -87,6 +90,10 @@ Do not start a local proxy (requires user provided proxy server on port 8087).
 ### `noBump`:
 
 Do not perform SSL bumping.
+
+### Boolean inputs
+
+`debug`, `doctor`, `noBump`, `noCache`, `noProxy`, `shared` and `uploadLogFile` accept `true` or `false`. Setting one to `false` (or leaving it out) disables it.
 
 ### `extraHeaders`:
 
