@@ -1,16 +1,34 @@
 import {getState, warning, setFailed, getInput} from '@actions/core'
-import {stopTunnel, uploadLog} from './container'
+import {
+    DEFAULT_LOG_ARTIFACT_NAME,
+    parseBooleanInput,
+    stopTunnel,
+    uploadLog
+} from './container'
 
 export async function run(): Promise<void> {
     const containerId = getState('containerId')
-    if (!containerId) {
-        warning('No active TestingBot Tunnel available.')
-        return
-    }
+    const workDir = getState('workDir')
 
-    await stopTunnel(containerId)
-    if (getInput('uploadLogFile') === 'true') {
-        await uploadLog(getState('workDir'))
+    try {
+        if (containerId) {
+            await stopTunnel(containerId)
+        } else {
+            warning('No active TestingBot Tunnel available.')
+        }
+    } finally {
+        // Upload even when the tunnel never started (no container ID) or
+        // stopping it failed: that is when the log is most useful.
+        const uploadInput = getInput('uploadLogFile')
+        const shouldUpload =
+            uploadInput.trim() === '' ||
+            parseBooleanInput('uploadLogFile', uploadInput)
+        if (workDir && shouldUpload) {
+            await uploadLog(
+                workDir,
+                getInput('logArtifactName') || DEFAULT_LOG_ARTIFACT_NAME
+            )
+        }
     }
 }
 
