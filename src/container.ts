@@ -468,6 +468,26 @@ const NON_RETRYABLE_PATTERNS = [
 const EXIT_CODE_INVALID_OPTIONS = 2
 
 /**
+ * Fails before any retries when the `docker` executable is missing, which
+ * retrying can't fix (for example on GitHub's hosted macOS runners).
+ */
+export async function assertDockerAvailable(): Promise<void> {
+    try {
+        await toolkit.exec('docker', ['version'], {
+            silent: true,
+            ignoreReturnCode: true
+        })
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        throw new NonRetryableError(
+            `Docker is not available on this runner (${message}). ` +
+                'The TestingBot Tunnel runs as a Linux container: use a ' +
+                'Linux runner with Docker, such as ubuntu-latest.'
+        )
+    }
+}
+
+/**
  * Starts the tunnel container and waits until it is ready.
  *
  * `onContainerStarted` is called with the container ID as soon as

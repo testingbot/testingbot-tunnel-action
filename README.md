@@ -9,6 +9,8 @@
 A GitHub action to launch the [TestingBot Tunnel](https://testingbot.com/support/other/tunnel).
 This will download and start the TestingBot Tunnel (Docker Image), allowing you to run tests on the TestingBot browser/device grid.
 
+The tunnel runs as a Linux container with host networking, so the job needs a Linux runner with Docker, such as `ubuntu-latest`. GitHub's hosted macOS and Windows runners can't run it.
+
 ## Example
 
 ```yaml

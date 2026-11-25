@@ -22,6 +22,7 @@ describe('index.run', () => {
     let setOutputStub: sinon.SinonStub
     let startTunnelStub: sinon.SinonStub
     let runDoctorStub: sinon.SinonStub
+    let assertDockerStub: sinon.SinonStub
 
     beforeEach(() => {
         getInputStub = sinon.stub(toolkit, 'getInput')
@@ -33,6 +34,9 @@ describe('index.run', () => {
         startTunnelStub = sinon.stub(container, 'startTunnel')
         sinon.stub(container, 'createWorkDir').returns('/tmp/tb-tunnel-test')
         runDoctorStub = sinon.stub(container, 'runDoctor').resolves()
+        assertDockerStub = sinon
+            .stub(container, 'assertDockerAvailable')
+            .resolves()
     })
 
     afterEach(() => {
@@ -154,6 +158,19 @@ describe('index.run', () => {
 
         assert.ok(saveStateStub.calledWith('containerId', 'container-starting'))
         assert.ok(!setOutputStub.calledWith('container-id', sinon.match.any))
+    })
+
+    it('fails without retrying when Docker is not available', async () => {
+        getInputStub.withArgs('retryTimeout').returns('10')
+        assertDockerStub.rejects(
+            new container.NonRetryableError('Docker is not available')
+        )
+
+        await assert.rejects(() => run(), {name: 'NonRetryableError'})
+
+        assert.ok(startTunnelStub.notCalled)
+        assert.ok(runDoctorStub.notCalled)
+        assert.ok(!saveStateStub.calledWith('workDir', sinon.match.any))
     })
 
     for (const name of ['key', 'secret']) {
