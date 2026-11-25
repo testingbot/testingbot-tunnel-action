@@ -15,7 +15,8 @@ describe('post.run', () => {
     beforeEach(() => {
         getStateStub = sinon.stub(core, 'getState')
         getStateStub.withArgs('workDir').returns('/tmp/tb-tunnel-test')
-        getInputStub = sinon.stub(core, 'getInput')
+        getStateStub.returns('')
+        getInputStub = sinon.stub(core, 'getInput').returns('')
         warningStub = sinon.stub(core, 'warning')
         sinon.stub(core, 'info')
         stopTunnelStub = sinon.stub(container, 'stopTunnel').resolves()
@@ -26,14 +27,29 @@ describe('post.run', () => {
         sinon.restore()
     })
 
-    it('warns and returns when no container ID is saved', async () => {
-        getStateStub.withArgs('containerId').returns('')
+    it('still uploads the log when no container ID was saved (tunnel failed to start)', async () => {
+        getInputStub.withArgs('uploadLogFile').returns('true')
 
         await run()
 
         assert.ok(
             warningStub.calledWith('No active TestingBot Tunnel available.')
         )
+        assert.ok(stopTunnelStub.notCalled)
+        assert.ok(
+            uploadLogStub.calledOnceWith(
+                '/tmp/tb-tunnel-test',
+                'testingbot-tunnel.log'
+            )
+        )
+    })
+
+    it('does nothing when the main step never created a work dir', async () => {
+        getStateStub.withArgs('workDir').returns('')
+        getInputStub.withArgs('uploadLogFile').returns('true')
+
+        await run()
+
         assert.ok(stopTunnelStub.notCalled)
         assert.ok(uploadLogStub.notCalled)
     })
@@ -48,7 +64,22 @@ describe('post.run', () => {
         assert.ok(uploadLogStub.calledOnceWith('/tmp/tb-tunnel-test'))
     })
 
-    it('stops the tunnel but does not upload log when uploadLogFile is not true', async () => {
+    it('passes a custom logArtifactName to uploadLog', async () => {
+        getStateStub.withArgs('containerId').returns('abc123')
+        getInputStub.withArgs('uploadLogFile').returns('true')
+        getInputStub.withArgs('logArtifactName').returns('tunnel-log-chrome')
+
+        await run()
+
+        assert.ok(
+            uploadLogStub.calledOnceWith(
+                '/tmp/tb-tunnel-test',
+                'tunnel-log-chrome'
+            )
+        )
+    })
+
+    it('stops the tunnel but does not upload log when uploadLogFile is false', async () => {
         getStateStub.withArgs('containerId').returns('abc123')
         getInputStub.withArgs('uploadLogFile').returns('false')
 
@@ -58,13 +89,13 @@ describe('post.run', () => {
         assert.ok(uploadLogStub.notCalled)
     })
 
-    it('does not upload log when uploadLogFile is empty', async () => {
+    it('uploads the log even when stopping the tunnel fails', async () => {
         getStateStub.withArgs('containerId').returns('abc123')
-        getInputStub.withArgs('uploadLogFile').returns('')
+        getInputStub.withArgs('uploadLogFile').returns('true')
+        stopTunnelStub.rejects(new Error('docker died'))
 
-        await run()
+        await assert.rejects(() => run(), {message: 'docker died'})
 
-        assert.ok(stopTunnelStub.calledOnce)
-        assert.ok(uploadLogStub.notCalled)
+        assert.ok(uploadLogStub.calledOnce)
     })
 })

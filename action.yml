@@ -82,9 +82,13 @@ inputs:
         description: Point to a directory for testing — starts a local webserver serving that directory.
         required: false
     uploadLogFile:
-        description: Upload the TestingBot log file as artifact
+        description: Upload the TestingBot log file as artifact. The log is also uploaded when the tunnel fails to start.
         required: false
         default: 'true'
+    logArtifactName:
+        description: Name of the uploaded log artifact. Artifact names must be unique per workflow run; set this when using the action in a matrix. If the name is already taken, a unique suffix is added.
+        required: false
+        default: 'testingbot-tunnel.log'
 outputs:
     container-id:
         description: Docker container ID of the running TestingBot Tunnel

@@ -8,6 +8,7 @@ import {
 } from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
+import {randomBytes} from 'crypto'
 import {getInput, info, isDebug, setSecret, warning} from '@actions/core'
 import {exec} from '@actions/exec'
 import optionsMappingJson from './options.json'
@@ -268,18 +269,52 @@ export const artifactDeps = {
     } => new DefaultArtifactClient()
 }
 
-export async function uploadLog(workDir: string): Promise<void> {
+export const DEFAULT_LOG_ARTIFACT_NAME = 'testingbot-tunnel.log'
+
+/**
+ * Artifact names may not contain these characters.
+ */
+function sanitizeArtifactName(name: string): string {
+    return name.replace(/["':<>|*?\\/\r\n]/g, '-')
+}
+
+function uniqueSuffix(): string {
+    const job = process.env['GITHUB_JOB']
+    const random = randomBytes(3).toString('hex')
+    return job ? `${job}-${random}` : random
+}
+
+/**
+ * Uploads the tunnel log as a workflow artifact. Artifact names must be
+ * unique within a workflow run, so when the upload fails (for example
+ * because another matrix job already uploaded an artifact with the same
+ * name) it is retried once under a unique name.
+ */
+export async function uploadLog(
+    workDir: string,
+    artifactName = DEFAULT_LOG_ARTIFACT_NAME
+): Promise<void> {
     const logFile = logFilePath(workDir)
     if (!existsSync(logFile)) {
         info('No TestingBot Tunnel log file to upload.')
         return
     }
-    info('Uploading artifacts')
     const artifactClient = artifactDeps.createClient()
-    const artifactName = 'testingbot-tunnel.log'
+    const name = sanitizeArtifactName(artifactName)
 
     try {
-        await artifactClient.uploadArtifact(artifactName, [logFile], workDir)
+        info(`Uploading TestingBot Tunnel log as artifact "${name}"`)
+        await artifactClient.uploadArtifact(name, [logFile], workDir)
+        return
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        info(`Uploading artifact "${name}" failed: ${message}`)
+    }
+
+    const fallbackName = `${name}-${uniqueSuffix()}`
+    try {
+        info(`Retrying upload as artifact "${fallbackName}"`)
+        await artifactClient.uploadArtifact(fallbackName, [logFile], workDir)
     } catch (err) {
         warning(err instanceof Error ? err : String(err))
     }

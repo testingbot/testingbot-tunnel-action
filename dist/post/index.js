@@ -92189,7 +92189,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.artifactDeps = exports.ContainerExitedError = exports.pollDeps = exports.NonRetryableError = exports.READY_FILE_NAME = exports.LOG_FILE_NAME = void 0;
+exports.DEFAULT_LOG_ARTIFACT_NAME = exports.artifactDeps = exports.ContainerExitedError = exports.pollDeps = exports.NonRetryableError = exports.READY_FILE_NAME = exports.LOG_FILE_NAME = void 0;
 exports.createWorkDir = createWorkDir;
 exports.logFilePath = logFilePath;
 exports.parseBooleanInput = parseBooleanInput;
@@ -92203,6 +92203,7 @@ exports.startTunnel = startTunnel;
 const fs_1 = __nccwpck_require__(79896);
 const path_1 = __nccwpck_require__(16928);
 const os_1 = __nccwpck_require__(70857);
+const crypto_1 = __nccwpck_require__(76982);
 const core_1 = __nccwpck_require__(37484);
 const exec_1 = __nccwpck_require__(95236);
 const options_json_1 = __importDefault(__nccwpck_require__(74197));
@@ -92400,17 +92401,45 @@ async function stopTunnel(containerId) {
 exports.artifactDeps = {
     createClient: () => new artifact_1.DefaultArtifactClient()
 };
-async function uploadLog(workDir) {
+exports.DEFAULT_LOG_ARTIFACT_NAME = 'testingbot-tunnel.log';
+/**
+ * Artifact names may not contain these characters.
+ */
+function sanitizeArtifactName(name) {
+    return name.replace(/["':<>|*?\\/\r\n]/g, '-');
+}
+function uniqueSuffix() {
+    const job = process.env['GITHUB_JOB'];
+    const random = (0, crypto_1.randomBytes)(3).toString('hex');
+    return job ? `${job}-${random}` : random;
+}
+/**
+ * Uploads the tunnel log as a workflow artifact. Artifact names must be
+ * unique within a workflow run, so when the upload fails (for example
+ * because another matrix job already uploaded an artifact with the same
+ * name) it is retried once under a unique name.
+ */
+async function uploadLog(workDir, artifactName = exports.DEFAULT_LOG_ARTIFACT_NAME) {
     const logFile = logFilePath(workDir);
     if (!(0, fs_1.existsSync)(logFile)) {
         (0, core_1.info)('No TestingBot Tunnel log file to upload.');
         return;
     }
-    (0, core_1.info)('Uploading artifacts');
     const artifactClient = exports.artifactDeps.createClient();
-    const artifactName = 'testingbot-tunnel.log';
+    const name = sanitizeArtifactName(artifactName);
     try {
-        await artifactClient.uploadArtifact(artifactName, [logFile], workDir);
+        (0, core_1.info)(`Uploading TestingBot Tunnel log as artifact "${name}"`);
+        await artifactClient.uploadArtifact(name, [logFile], workDir);
+        return;
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        (0, core_1.info)(`Uploading artifact "${name}" failed: ${message}`);
+    }
+    const fallbackName = `${name}-${uniqueSuffix()}`;
+    try {
+        (0, core_1.info)(`Retrying upload as artifact "${fallbackName}"`);
+        await artifactClient.uploadArtifact(fallbackName, [logFile], workDir);
     }
     catch (err) {
         (0, core_1.warning)(err instanceof Error ? err : String(err));
@@ -142196,13 +142225,24 @@ const core_1 = __nccwpck_require__(37484);
 const container_1 = __nccwpck_require__(36296);
 async function run() {
     const containerId = (0, core_1.getState)('containerId');
-    if (!containerId) {
-        (0, core_1.warning)('No active TestingBot Tunnel available.');
-        return;
+    const workDir = (0, core_1.getState)('workDir');
+    try {
+        if (containerId) {
+            await (0, container_1.stopTunnel)(containerId);
+        }
+        else {
+            (0, core_1.warning)('No active TestingBot Tunnel available.');
+        }
     }
-    await (0, container_1.stopTunnel)(containerId);
-    if ((0, core_1.getInput)('uploadLogFile') === 'true') {
-        await (0, container_1.uploadLog)((0, core_1.getState)('workDir'));
+    finally {
+        // Upload even when the tunnel never started (no container ID) or
+        // stopping it failed: that is when the log is most useful.
+        const uploadInput = (0, core_1.getInput)('uploadLogFile');
+        const shouldUpload = uploadInput.trim() === '' ||
+            (0, container_1.parseBooleanInput)('uploadLogFile', uploadInput);
+        if (workDir && shouldUpload) {
+            await (0, container_1.uploadLog)(workDir, (0, core_1.getInput)('logArtifactName') || container_1.DEFAULT_LOG_ARTIFACT_NAME);
+        }
     }
 }
 /* istanbul ignore next */

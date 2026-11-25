@@ -432,12 +432,52 @@ describe('uploadLog', () => {
         assert.ok(uploadArtifactStub.notCalled)
     })
 
+    it('uses a custom artifact name, replacing invalid characters', async () => {
+        fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'log')
+        uploadArtifactStub.resolves({id: 1, size: 0})
+
+        await uploadLog(workDir, 'tunnel: chrome/linux')
+
+        assert.equal(
+            uploadArtifactStub.firstCall.args[0],
+            'tunnel- chrome-linux'
+        )
+    })
+
+    it('retries under a unique name when the upload fails (e.g. name taken by another matrix job)', async () => {
+        fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'log')
+        const originalJob = process.env['GITHUB_JOB']
+        process.env['GITHUB_JOB'] = 'e2e'
+        uploadArtifactStub
+            .onFirstCall()
+            .rejects(new Error('an artifact with this name already exists'))
+        uploadArtifactStub.onSecondCall().resolves({id: 2, size: 0})
+
+        try {
+            await uploadLog(workDir)
+        } finally {
+            if (originalJob === undefined) {
+                delete process.env['GITHUB_JOB']
+            } else {
+                process.env['GITHUB_JOB'] = originalJob
+            }
+        }
+
+        assert.ok(uploadArtifactStub.calledTwice)
+        assert.match(
+            uploadArtifactStub.secondCall.args[0],
+            /^testingbot-tunnel\.log-e2e-[0-9a-f]{6}$/
+        )
+    })
+
     it('swallows errors so post-action does not fail', async () => {
         fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'log')
         uploadArtifactStub.rejects(new Error('upload failed'))
 
         // uploadLog catches errors internally — should not throw
         await uploadLog(workDir)
+        assert.ok(uploadArtifactStub.calledTwice)
+        assert.ok((core.warning as sinon.SinonStub).calledOnce)
     })
 })
 
