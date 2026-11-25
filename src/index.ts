@@ -1,4 +1,5 @@
 import {
+    assertDockerAvailable,
     createWorkDir,
     logFilePath,
     NonRetryableError,
@@ -29,6 +30,7 @@ function assertCredentials(): void {
 
 export async function run(): Promise<void> {
     assertCredentials()
+    await assertDockerAvailable()
 
     const retryTimeout =
         (parseInt(toolkit.getInput('retryTimeout'), 10) || 10) * 1000 * 60

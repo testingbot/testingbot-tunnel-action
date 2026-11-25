@@ -114339,6 +114339,19 @@ var NON_RETRYABLE_PATTERNS = [
   /Missing required arguments API_KEY API_SECRET/
 ];
 var EXIT_CODE_INVALID_OPTIONS = 2;
+async function assertDockerAvailable() {
+  try {
+    await toolkit.exec("docker", ["version"], {
+      silent: true,
+      ignoreReturnCode: true
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new NonRetryableError(
+      `Docker is not available on this runner (${message}). The TestingBot Tunnel runs as a Linux container: use a Linux runner with Docker, such as ubuntu-latest.`
+    );
+  }
+}
 async function startTunnel(workDir, onContainerStarted = () => {
 }) {
   const containerName = imageName();
@@ -114415,6 +114428,7 @@ function assertCredentials() {
 }
 async function run() {
   assertCredentials();
+  await assertDockerAvailable();
   const retryTimeout = (parseInt(toolkit.getInput("retryTimeout"), 10) || 10) * 1e3 * 60;
   const startTime = Date.now();
   const workDir = createWorkDir();

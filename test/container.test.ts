@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import {join} from 'path'
 
 import {
+    assertDockerAvailable,
     buildMounts,
     buildOptions,
     buildSecretEnv,
@@ -535,6 +536,39 @@ describe('readyPoller', () => {
         await assert.rejects(() => readyPoller(workDir, 'abc'), {
             message: 'Timeout Error: waited 1 seconds for tunnel to start.'
         })
+    })
+})
+
+describe('assertDockerAvailable', () => {
+    let execStub: sinon.SinonStub
+
+    beforeEach(() => {
+        execStub = sinon.stub(toolkit, 'exec')
+    })
+
+    afterEach(() => {
+        sinon.restore()
+    })
+
+    it('throws a NonRetryableError when the docker executable is missing', async () => {
+        execStub.rejects(new Error('Unable to locate executable file: docker.'))
+
+        await assert.rejects(() => assertDockerAvailable(), {
+            name: 'NonRetryableError',
+            message: /Docker is not available on this runner .*Linux runner/
+        })
+    })
+
+    it('resolves when docker runs, whatever its exit code', async () => {
+        // A daemon that isn't reachable yet is left to the retry loop.
+        execStub.resolves(1)
+
+        await assertDockerAvailable()
+
+        assert.deepEqual(execStub.firstCall.args.slice(0, 2), [
+            'docker',
+            ['version']
+        ])
     })
 })
 
