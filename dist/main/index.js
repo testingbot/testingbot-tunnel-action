@@ -92189,10 +92189,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.artifactDeps = exports.TMP_DIR_HOST = void 0;
+exports.artifactDeps = exports.ContainerExitedError = exports.pollDeps = exports.NonRetryableError = exports.READY_FILE_NAME = exports.LOG_FILE_NAME = void 0;
+exports.createWorkDir = createWorkDir;
+exports.logFilePath = logFilePath;
 exports.parseBooleanInput = parseBooleanInput;
 exports.buildOptions = buildOptions;
 exports.buildSecretEnv = buildSecretEnv;
+exports.getContainerState = getContainerState;
 exports.readyPoller = readyPoller;
 exports.stopTunnel = stopTunnel;
 exports.uploadLog = uploadLog;
@@ -92205,9 +92208,34 @@ const exec_1 = __nccwpck_require__(95236);
 const options_json_1 = __importDefault(__nccwpck_require__(74197));
 const artifact_1 = __nccwpck_require__(76846);
 const TMP_DIR_CONTAINER = '/tmp';
-exports.TMP_DIR_HOST = process.env['RUNNER_TEMP']
-    ? (0, path_1.join)(process.env['RUNNER_TEMP'], '../')
-    : (0, fs_1.mkdtempSync)((0, path_1.join)((0, os_1.tmpdir)(), `tb-tunnel-action`));
+exports.LOG_FILE_NAME = 'tb-tunnel.log';
+exports.READY_FILE_NAME = 'tb.ready';
+/**
+ * Thrown for failures that retrying cannot fix (invalid options, rejected
+ * credentials). The main step stops retrying when it sees one.
+ */
+class NonRetryableError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'NonRetryableError';
+    }
+}
+exports.NonRetryableError = NonRetryableError;
+/**
+ * Creates a fresh directory for this run's log and ready files. It is
+ * mounted into the container, so it is made writable for the image's
+ * non-root user (uid 1001), which need not match the runner's uid on
+ * self-hosted runners.
+ */
+function createWorkDir() {
+    const base = process.env['RUNNER_TEMP'] || (0, os_1.tmpdir)();
+    const dir = (0, fs_1.mkdtempSync)((0, path_1.join)(base, 'tb-tunnel-'));
+    (0, fs_1.chmodSync)(dir, 0o777);
+    return dir;
+}
+function logFilePath(workDir) {
+    return (0, path_1.join)(workDir, exports.LOG_FILE_NAME);
+}
 const optionsMapping = options_json_1.default;
 /**
  * Parses a boolean action input. Empty means "not set" (false). Accepts the
@@ -92227,8 +92255,8 @@ function parseBooleanInput(name, value) {
     throw new TypeError(`Input "${name}" must be a boolean (true or false), got "${value}"`);
 }
 function buildOptions() {
-    const LOG_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, 'tb-tunnel.log');
-    const READY_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, 'tb.ready');
+    const LOG_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, exports.LOG_FILE_NAME);
+    const READY_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, exports.READY_FILE_NAME);
     // Credentials are passed to the tunnel via TESTINGBOT_KEY / TESTINGBOT_SECRET
     // environment variables (see startTunnel), not positional CLI args, so they
     // do not leak into `ps aux` or `docker inspect` command-lines.
@@ -92276,56 +92304,94 @@ function buildSecretEnv() {
     }
     return env;
 }
-async function readyPoller() {
-    const readyFile = (0, path_1.join)(exports.TMP_DIR_HOST, 'tb.ready');
-    const timeoutSeconds = parseInt((0, core_1.getInput)('readyTimeout'), 10) || 60;
-    return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            watcher.close();
-            reject(new Error(`Timeout Error: waited ${timeoutSeconds} seconds for tunnel to start.`));
-        }, timeoutSeconds * 1000);
-        const watcher = (0, fs_1.watch)(exports.TMP_DIR_HOST, (eventType, fileName) => {
-            if (fileName !== 'tb.ready') {
-                return;
-            }
-            clearTimeout(timeout);
-            watcher.close();
-            resolve();
-        });
-        // Check if file already exists (race: tunnel may start before watcher)
-        if ((0, fs_1.existsSync)(readyFile)) {
-            clearTimeout(timeout);
-            watcher.close();
-            resolve();
-        }
-    });
-}
 async function execWithReturn(commandLine, args, extraOptions) {
     let output = '';
-    await (0, exec_1.exec)(commandLine, args, {
-        ...extraOptions,
+    const { includeStderr, ...execOptions } = extraOptions ?? {};
+    const exitCode = await (0, exec_1.exec)(commandLine, args, {
+        ...execOptions,
         listeners: {
             stdout: (data) => {
                 output += data.toString();
+            },
+            stderr: (data) => {
+                if (includeStderr) {
+                    output += data.toString();
+                }
             }
         }
     });
-    return output;
+    return { exitCode, output };
 }
+async function getContainerState(containerId) {
+    const { exitCode, output } = await execWithReturn('docker', [
+        'inspect',
+        '--format',
+        '{{.State.Running}} {{.State.ExitCode}}',
+        containerId
+    ], { silent: true, ignoreReturnCode: true });
+    if (exitCode !== 0) {
+        // Container no longer exists
+        return { running: false };
+    }
+    const [running, code] = output.trim().split(' ');
+    return {
+        running: running === 'true',
+        exitCode: code === undefined ? undefined : parseInt(code, 10)
+    };
+}
+exports.pollDeps = {
+    intervalMs: 1000
+};
+/**
+ * Waits until the tunnel writes its ready file. Fails early when the
+ * container exits before becoming ready, instead of waiting for the full
+ * timeout.
+ */
+async function readyPoller(workDir, containerId) {
+    const readyFile = (0, path_1.join)(workDir, exports.READY_FILE_NAME);
+    const timeoutSeconds = parseInt((0, core_1.getInput)('readyTimeout'), 10) || 60;
+    const deadline = Date.now() + timeoutSeconds * 1000;
+    for (;;) {
+        if ((0, fs_1.existsSync)(readyFile)) {
+            return;
+        }
+        const state = await getContainerState(containerId);
+        if ((0, fs_1.existsSync)(readyFile)) {
+            return;
+        }
+        if (!state.running) {
+            throw new ContainerExitedError(state.exitCode);
+        }
+        if (Date.now() >= deadline) {
+            throw new Error(`Timeout Error: waited ${timeoutSeconds} seconds for tunnel to start.`);
+        }
+        await new Promise(resolve => setTimeout(resolve, exports.pollDeps.intervalMs));
+    }
+}
+class ContainerExitedError extends Error {
+    exitCode;
+    constructor(exitCode) {
+        super(`TestingBot Tunnel exited before becoming ready${exitCode === undefined ? '' : ` (exit code ${exitCode})`}.`);
+        this.exitCode = exitCode;
+        this.name = 'ContainerExitedError';
+    }
+}
+exports.ContainerExitedError = ContainerExitedError;
 async function stopTunnel(containerId) {
     (0, core_1.info)(`Stopping TestingBot Tunnel ${containerId}...`);
-    const running = (await execWithReturn('docker', [
-        'ps',
-        '-q',
-        '-f',
-        `id=${containerId}`
-    ])).trim() !== '';
-    if (running) {
+    const state = await getContainerState(containerId);
+    if (state.running) {
         await (0, exec_1.exec)('docker', ['container', 'stop', containerId]);
     }
     else {
         (0, core_1.info)('TestingBot Tunnel does not appear to be running.');
     }
+    // The container is not started with --rm (so its exit code and output
+    // can be inspected after a failed start); remove it here.
+    await (0, exec_1.exec)('docker', ['container', 'rm', '--force', containerId], {
+        silent: true,
+        ignoreReturnCode: true
+    });
     (0, core_1.info)('Finished stopping TestingBot Tunnel');
 }
 // Exposed as an object so tests can replace the factory without needing to
@@ -92334,18 +92400,33 @@ async function stopTunnel(containerId) {
 exports.artifactDeps = {
     createClient: () => new artifact_1.DefaultArtifactClient()
 };
-async function uploadLog() {
+async function uploadLog(workDir) {
+    const logFile = logFilePath(workDir);
+    if (!(0, fs_1.existsSync)(logFile)) {
+        (0, core_1.info)('No TestingBot Tunnel log file to upload.');
+        return;
+    }
     (0, core_1.info)('Uploading artifacts');
     const artifactClient = exports.artifactDeps.createClient();
     const artifactName = 'testingbot-tunnel.log';
     try {
-        await artifactClient.uploadArtifact(artifactName, [(0, path_1.join)(exports.TMP_DIR_HOST, 'tb-tunnel.log')], exports.TMP_DIR_HOST);
+        await artifactClient.uploadArtifact(artifactName, [logFile], workDir);
     }
     catch (err) {
         (0, core_1.warning)(err instanceof Error ? err : String(err));
     }
 }
-async function startTunnel() {
+/**
+ * Patterns in the tunnel's output that mean retrying will not help.
+ */
+const NON_RETRYABLE_PATTERNS = [
+    /HTTP error code : 401\b/,
+    /401 Unauthorized/,
+    /Missing required arguments API_KEY API_SECRET/
+];
+// Exit code 2 is the tunnel's "invalid command-line options" exit code.
+const EXIT_CODE_INVALID_OPTIONS = 2;
+async function startTunnel(workDir) {
     const containerVersion = (0, core_1.getInput)('tbVersion');
     const containerName = `testingbot/tunnel:${containerVersion}`;
     await (0, exec_1.exec)('docker', ['pull', containerName]);
@@ -92371,40 +92452,58 @@ async function startTunnel() {
     // `-e NAME` (without a value) makes docker read the value from its own
     // environment, so secrets never appear on the docker command-line.
     const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name]);
+    // A ready file left over from a previous attempt (or a previous job on a
+    // self-hosted runner) would make the tunnel look ready immediately.
+    (0, fs_1.rmSync)((0, path_1.join)(workDir, exports.READY_FILE_NAME), { force: true });
+    // The log file is appended to across attempts; only print this attempt's part.
+    const logOffset = (0, fs_1.existsSync)(logFilePath(workDir))
+        ? (0, fs_1.statSync)(logFilePath(workDir)).size
+        : 0;
     const containerId = (await execWithReturn('docker', [
         'run',
         '--network=host',
         '--detach',
-        '--rm',
         ...envArgs,
         '-v',
-        `${exports.TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
+        `${workDir}:${TMP_DIR_CONTAINER}`,
         containerName
     ].concat(buildOptions()), {
         env: {
             ...baseEnv,
             ...secretEnv
         }
-    })).trim();
+    })).output.trim();
     let hasError = false;
     try {
-        await readyPoller();
+        await readyPoller(workDir, containerId);
     }
     catch (err) {
         hasError = true;
+        // The tunnel prints startup errors (invalid options, rejected
+        // credentials) to the console, not to its log file.
+        const { output: consoleOutput } = await execWithReturn('docker', ['logs', containerId], { silent: true, ignoreReturnCode: true, includeStderr: true });
+        if (consoleOutput.trim() !== '') {
+            (0, core_1.warning)(`TestingBot Tunnel output:\n${consoleOutput}`);
+        }
         await stopTunnel(containerId);
+        if (err instanceof ContainerExitedError &&
+            (err.exitCode === EXIT_CODE_INVALID_OPTIONS ||
+                NON_RETRYABLE_PATTERNS.some(p => p.test(consoleOutput)))) {
+            throw new NonRetryableError(`${err.message} Not retrying: see the TestingBot Tunnel output above.`);
+        }
         throw err;
     }
     finally {
-        // cleanup
         try {
-            const log = await fs_1.promises.readFile((0, path_1.join)(exports.TMP_DIR_HOST, 'tb-tunnel.log'), {
-                encoding: 'utf-8'
-            });
+            const log = (await fs_1.promises.readFile(logFilePath(workDir)))
+                .subarray(logOffset)
+                .toString('utf-8');
             (hasError ? core_1.warning : core_1.info)(`TestingBot Tunnel log: ${log}`);
         }
         catch (errLog) {
-            (0, core_1.warning)(errLog instanceof Error ? errLog : String(errLog));
+            if (hasError) {
+                (0, core_1.warning)(errLog instanceof Error ? errLog : String(errLog));
+            }
         }
     }
     (0, core_1.info)('TestingBot Tunnel is ready');
@@ -92423,22 +92522,27 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.retryDelays = void 0;
 exports.run = run;
 const core_1 = __nccwpck_require__(37484);
-const path_1 = __nccwpck_require__(16928);
 const container_1 = __nccwpck_require__(36296);
 exports.retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(a => a * 1000);
 async function run() {
     const retryTimeout = (parseInt((0, core_1.getInput)('retryTimeout'), 10) || 10) * 1000 * 60;
     const startTime = Date.now();
+    const workDir = (0, container_1.createWorkDir)();
+    // Saved up front so the post step can find the log even if startup fails.
+    (0, core_1.saveState)('workDir', workDir);
     for (let i = 0;; i++) {
         try {
-            const containerId = await (0, container_1.startTunnel)();
+            const containerId = await (0, container_1.startTunnel)(workDir);
             (0, core_1.saveState)('containerId', containerId);
             (0, core_1.setOutput)('container-id', containerId);
             (0, core_1.setOutput)('tunnel-identifier', (0, core_1.getInput)('tunnelIdentifier'));
-            (0, core_1.setOutput)('log-file', (0, path_1.join)(container_1.TMP_DIR_HOST, 'tb-tunnel.log'));
+            (0, core_1.setOutput)('log-file', (0, container_1.logFilePath)(workDir));
             return;
         }
         catch (e) {
+            if (e instanceof container_1.NonRetryableError) {
+                throw e;
+            }
             if (Date.now() - startTime >= retryTimeout) {
                 break;
             }

@@ -14,6 +14,7 @@ describe('post.run', () => {
 
     beforeEach(() => {
         getStateStub = sinon.stub(core, 'getState')
+        getStateStub.withArgs('workDir').returns('/tmp/tb-tunnel-test')
         getInputStub = sinon.stub(core, 'getInput')
         warningStub = sinon.stub(core, 'warning')
         sinon.stub(core, 'info')
@@ -44,7 +45,7 @@ describe('post.run', () => {
         await run()
 
         assert.ok(stopTunnelStub.calledOnceWith('abc123'))
-        assert.ok(uploadLogStub.calledOnce)
+        assert.ok(uploadLogStub.calledOnceWith('/tmp/tb-tunnel-test'))
     })
 
     it('stops the tunnel but does not upload log when uploadLogFile is not true', async () => {

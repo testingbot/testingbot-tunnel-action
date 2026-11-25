@@ -1,4 +1,11 @@
-import {promises, existsSync, watch, mkdtempSync} from 'fs'
+import {
+    promises,
+    existsSync,
+    mkdtempSync,
+    chmodSync,
+    rmSync,
+    statSync
+} from 'fs'
 import {join} from 'path'
 import {tmpdir} from 'os'
 import {getInput, info, isDebug, setSecret, warning} from '@actions/core'
@@ -7,9 +14,36 @@ import optionsMappingJson from './options.json'
 import {DefaultArtifactClient} from '@actions/artifact'
 
 const TMP_DIR_CONTAINER = '/tmp'
-export const TMP_DIR_HOST = process.env['RUNNER_TEMP']
-    ? join(process.env['RUNNER_TEMP'], '../')
-    : mkdtempSync(join(tmpdir(), `tb-tunnel-action`))
+export const LOG_FILE_NAME = 'tb-tunnel.log'
+export const READY_FILE_NAME = 'tb.ready'
+
+/**
+ * Thrown for failures that retrying cannot fix (invalid options, rejected
+ * credentials). The main step stops retrying when it sees one.
+ */
+export class NonRetryableError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'NonRetryableError'
+    }
+}
+
+/**
+ * Creates a fresh directory for this run's log and ready files. It is
+ * mounted into the container, so it is made writable for the image's
+ * non-root user (uid 1001), which need not match the runner's uid on
+ * self-hosted runners.
+ */
+export function createWorkDir(): string {
+    const base = process.env['RUNNER_TEMP'] || tmpdir()
+    const dir = mkdtempSync(join(base, 'tb-tunnel-'))
+    chmodSync(dir, 0o777)
+    return dir
+}
+
+export function logFilePath(workDir: string): string {
+    return join(workDir, LOG_FILE_NAME)
+}
 
 type OptionMapping = {
     actionOption: string
@@ -45,8 +79,8 @@ export function parseBooleanInput(name: string, value: string): boolean {
 }
 
 export function buildOptions(): string[] {
-    const LOG_FILE = join(TMP_DIR_CONTAINER, 'tb-tunnel.log')
-    const READY_FILE = join(TMP_DIR_CONTAINER, 'tb.ready')
+    const LOG_FILE = join(TMP_DIR_CONTAINER, LOG_FILE_NAME)
+    const READY_FILE = join(TMP_DIR_CONTAINER, READY_FILE_NAME)
 
     // Credentials are passed to the tunnel via TESTINGBOT_KEY / TESTINGBOT_SECRET
     // environment variables (see startTunnel), not positional CLI args, so they
@@ -99,71 +133,125 @@ export function buildSecretEnv(): {[key: string]: string} {
     return env
 }
 
-export async function readyPoller(): Promise<void> {
-    const readyFile = join(TMP_DIR_HOST, 'tb.ready')
-    const timeoutSeconds = parseInt(getInput('readyTimeout'), 10) || 60
-    return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            watcher.close()
-            reject(
-                new Error(
-                    `Timeout Error: waited ${timeoutSeconds} seconds for tunnel to start.`
-                )
-            )
-        }, timeoutSeconds * 1000)
-
-        const watcher = watch(TMP_DIR_HOST, (eventType, fileName) => {
-            if (fileName !== 'tb.ready') {
-                return
-            }
-            clearTimeout(timeout)
-            watcher.close()
-            resolve()
-        })
-
-        // Check if file already exists (race: tunnel may start before watcher)
-        if (existsSync(readyFile)) {
-            clearTimeout(timeout)
-            watcher.close()
-            resolve()
-        }
-    })
-}
+type ContainerState = {running: boolean; exitCode?: number}
 
 async function execWithReturn(
     commandLine: string,
     args?: string[],
-    extraOptions?: {env?: {[key: string]: string}}
-): Promise<string> {
+    extraOptions?: {
+        env?: {[key: string]: string}
+        silent?: boolean
+        ignoreReturnCode?: boolean
+        includeStderr?: boolean
+    }
+): Promise<{exitCode: number; output: string}> {
     let output = ''
-    await exec(commandLine, args, {
-        ...extraOptions,
+    const {includeStderr, ...execOptions} = extraOptions ?? {}
+    const exitCode = await exec(commandLine, args, {
+        ...execOptions,
         listeners: {
             stdout: (data: Buffer) => {
                 output += data.toString()
+            },
+            stderr: (data: Buffer) => {
+                if (includeStderr) {
+                    output += data.toString()
+                }
             }
         }
     })
-    return output
+    return {exitCode, output}
+}
+
+export async function getContainerState(
+    containerId: string
+): Promise<ContainerState> {
+    const {exitCode, output} = await execWithReturn(
+        'docker',
+        [
+            'inspect',
+            '--format',
+            '{{.State.Running}} {{.State.ExitCode}}',
+            containerId
+        ],
+        {silent: true, ignoreReturnCode: true}
+    )
+    if (exitCode !== 0) {
+        // Container no longer exists
+        return {running: false}
+    }
+    const [running, code] = output.trim().split(' ')
+    return {
+        running: running === 'true',
+        exitCode: code === undefined ? undefined : parseInt(code, 10)
+    }
+}
+
+export const pollDeps = {
+    intervalMs: 1000
+}
+
+/**
+ * Waits until the tunnel writes its ready file. Fails early when the
+ * container exits before becoming ready, instead of waiting for the full
+ * timeout.
+ */
+export async function readyPoller(
+    workDir: string,
+    containerId: string
+): Promise<void> {
+    const readyFile = join(workDir, READY_FILE_NAME)
+    const timeoutSeconds = parseInt(getInput('readyTimeout'), 10) || 60
+    const deadline = Date.now() + timeoutSeconds * 1000
+
+    for (;;) {
+        if (existsSync(readyFile)) {
+            return
+        }
+        const state = await getContainerState(containerId)
+        if (existsSync(readyFile)) {
+            return
+        }
+        if (!state.running) {
+            throw new ContainerExitedError(state.exitCode)
+        }
+        if (Date.now() >= deadline) {
+            throw new Error(
+                `Timeout Error: waited ${timeoutSeconds} seconds for tunnel to start.`
+            )
+        }
+        await new Promise<void>(resolve =>
+            setTimeout(resolve, pollDeps.intervalMs)
+        )
+    }
+}
+
+export class ContainerExitedError extends Error {
+    constructor(readonly exitCode?: number) {
+        super(
+            `TestingBot Tunnel exited before becoming ready${
+                exitCode === undefined ? '' : ` (exit code ${exitCode})`
+            }.`
+        )
+        this.name = 'ContainerExitedError'
+    }
 }
 
 export async function stopTunnel(containerId: string): Promise<void> {
     info(`Stopping TestingBot Tunnel ${containerId}...`)
-    const running =
-        (
-            await execWithReturn('docker', [
-                'ps',
-                '-q',
-                '-f',
-                `id=${containerId}`
-            ])
-        ).trim() !== ''
+    const state = await getContainerState(containerId)
 
-    if (running) {
+    if (state.running) {
         await exec('docker', ['container', 'stop', containerId])
     } else {
         info('TestingBot Tunnel does not appear to be running.')
     }
+    // The container is not started with --rm (so its exit code and output
+    // can be inspected after a failed start); remove it here.
+    await exec('docker', ['container', 'rm', '--force', containerId], {
+        silent: true,
+        ignoreReturnCode: true
+    })
     info('Finished stopping TestingBot Tunnel')
 }
 
@@ -180,23 +268,36 @@ export const artifactDeps = {
     } => new DefaultArtifactClient()
 }
 
-export async function uploadLog(): Promise<void> {
+export async function uploadLog(workDir: string): Promise<void> {
+    const logFile = logFilePath(workDir)
+    if (!existsSync(logFile)) {
+        info('No TestingBot Tunnel log file to upload.')
+        return
+    }
     info('Uploading artifacts')
     const artifactClient = artifactDeps.createClient()
     const artifactName = 'testingbot-tunnel.log'
 
     try {
-        await artifactClient.uploadArtifact(
-            artifactName,
-            [join(TMP_DIR_HOST, 'tb-tunnel.log')],
-            TMP_DIR_HOST
-        )
+        await artifactClient.uploadArtifact(artifactName, [logFile], workDir)
     } catch (err) {
         warning(err instanceof Error ? err : String(err))
     }
 }
 
-export async function startTunnel(): Promise<string> {
+/**
+ * Patterns in the tunnel's output that mean retrying will not help.
+ */
+const NON_RETRYABLE_PATTERNS = [
+    /HTTP error code : 401\b/,
+    /401 Unauthorized/,
+    /Missing required arguments API_KEY API_SECRET/
+]
+
+// Exit code 2 is the tunnel's "invalid command-line options" exit code.
+const EXIT_CODE_INVALID_OPTIONS = 2
+
+export async function startTunnel(workDir: string): Promise<string> {
     const containerVersion = getInput('tbVersion')
     const containerName = `testingbot/tunnel:${containerVersion}`
     await exec('docker', ['pull', containerName])
@@ -226,6 +327,14 @@ export async function startTunnel(): Promise<string> {
     // environment, so secrets never appear on the docker command-line.
     const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name])
 
+    // A ready file left over from a previous attempt (or a previous job on a
+    // self-hosted runner) would make the tunnel look ready immediately.
+    rmSync(join(workDir, READY_FILE_NAME), {force: true})
+    // The log file is appended to across attempts; only print this attempt's part.
+    const logOffset = existsSync(logFilePath(workDir))
+        ? statSync(logFilePath(workDir)).size
+        : 0
+
     const containerId = (
         await execWithReturn(
             'docker',
@@ -233,10 +342,9 @@ export async function startTunnel(): Promise<string> {
                 'run',
                 '--network=host',
                 '--detach',
-                '--rm',
                 ...envArgs,
                 '-v',
-                `${TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
+                `${workDir}:${TMP_DIR_CONTAINER}`,
                 containerName
             ].concat(buildOptions()),
             {
@@ -246,28 +354,46 @@ export async function startTunnel(): Promise<string> {
                 }
             }
         )
-    ).trim()
+    ).output.trim()
 
     let hasError = false
     try {
-        await readyPoller()
+        await readyPoller(workDir, containerId)
     } catch (err) {
         hasError = true
+        // The tunnel prints startup errors (invalid options, rejected
+        // credentials) to the console, not to its log file.
+        const {output: consoleOutput} = await execWithReturn(
+            'docker',
+            ['logs', containerId],
+            {silent: true, ignoreReturnCode: true, includeStderr: true}
+        )
+        if (consoleOutput.trim() !== '') {
+            warning(`TestingBot Tunnel output:\n${consoleOutput}`)
+        }
         await stopTunnel(containerId)
+
+        if (
+            err instanceof ContainerExitedError &&
+            (err.exitCode === EXIT_CODE_INVALID_OPTIONS ||
+                NON_RETRYABLE_PATTERNS.some(p => p.test(consoleOutput)))
+        ) {
+            throw new NonRetryableError(
+                `${err.message} Not retrying: see the TestingBot Tunnel output above.`
+            )
+        }
         throw err
     } finally {
-        // cleanup
         try {
-            const log = await promises.readFile(
-                join(TMP_DIR_HOST, 'tb-tunnel.log'),
-                {
-                    encoding: 'utf-8'
-                }
-            )
+            const log = (await promises.readFile(logFilePath(workDir)))
+                .subarray(logOffset)
+                .toString('utf-8')
 
             ;(hasError ? warning : info)(`TestingBot Tunnel log: ${log}`)
         } catch (errLog) {
-            warning(errLog instanceof Error ? errLog : String(errLog))
+            if (hasError) {
+                warning(errLog instanceof Error ? errLog : String(errLog))
+            }
         }
     }
 

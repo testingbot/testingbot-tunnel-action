@@ -17,6 +17,7 @@ describe('index.run', () => {
         setOutputStub = sinon.stub(core, 'setOutput')
         sinon.stub(core, 'warning')
         startTunnelStub = sinon.stub(container, 'startTunnel')
+        sinon.stub(container, 'createWorkDir').returns('/tmp/tb-tunnel-test')
     })
 
     afterEach(() => {
@@ -30,8 +31,9 @@ describe('index.run', () => {
 
         await run()
 
-        assert.ok(saveStateStub.calledOnceWith('containerId', 'container-abc'))
-        assert.ok(startTunnelStub.calledOnce)
+        assert.ok(saveStateStub.calledWith('workDir', '/tmp/tb-tunnel-test'))
+        assert.ok(saveStateStub.calledWith('containerId', 'container-abc'))
+        assert.ok(startTunnelStub.calledOnceWith('/tmp/tb-tunnel-test'))
         assert.ok(setOutputStub.calledWith('container-id', 'container-abc'))
         assert.ok(setOutputStub.calledWith('tunnel-identifier', 'my-tunnel'))
         const logCall = setOutputStub
@@ -57,9 +59,7 @@ describe('index.run', () => {
             await run()
 
             assert.ok(startTunnelStub.calledTwice)
-            assert.ok(
-                saveStateStub.calledOnceWith('containerId', 'container-xyz')
-            )
+            assert.ok(saveStateStub.calledWith('containerId', 'container-xyz'))
         } finally {
             retryDelays[0] = originalFirst
         }
@@ -94,6 +94,16 @@ describe('index.run', () => {
         // Should not throw; just complete normally using the default.
         await run()
 
-        assert.ok(saveStateStub.calledOnce)
+        assert.ok(saveStateStub.calledWith('containerId', 'ok'))
+    })
+
+    it('does not retry a NonRetryableError', async () => {
+        getInputStub.withArgs('retryTimeout').returns('10')
+        startTunnelStub.rejects(new container.NonRetryableError('bad options'))
+
+        await assert.rejects(() => run(), {message: 'bad options'})
+
+        assert.ok(startTunnelStub.calledOnce)
+        assert.ok(!saveStateStub.calledWith('containerId', sinon.match.any))
     })
 })

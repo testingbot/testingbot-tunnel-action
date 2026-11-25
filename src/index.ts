@@ -1,6 +1,10 @@
 import {getInput, saveState, setFailed, setOutput, warning} from '@actions/core'
-import {join} from 'path'
-import {startTunnel, TMP_DIR_HOST} from './container'
+import {
+    createWorkDir,
+    logFilePath,
+    NonRetryableError,
+    startTunnel
+} from './container'
 
 export const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
     a => a * 1000
@@ -11,15 +15,22 @@ export async function run(): Promise<void> {
         (parseInt(getInput('retryTimeout'), 10) || 10) * 1000 * 60
     const startTime = Date.now()
 
+    const workDir = createWorkDir()
+    // Saved up front so the post step can find the log even if startup fails.
+    saveState('workDir', workDir)
+
     for (let i = 0; ; i++) {
         try {
-            const containerId = await startTunnel()
+            const containerId = await startTunnel(workDir)
             saveState('containerId', containerId)
             setOutput('container-id', containerId)
             setOutput('tunnel-identifier', getInput('tunnelIdentifier'))
-            setOutput('log-file', join(TMP_DIR_HOST, 'tb-tunnel.log'))
+            setOutput('log-file', logFilePath(workDir))
             return
         } catch (e) {
+            if (e instanceof NonRetryableError) {
+                throw e
+            }
             if (Date.now() - startTime >= retryTimeout) {
                 break
             }
