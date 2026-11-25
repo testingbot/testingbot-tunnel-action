@@ -92190,7 +92190,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.artifactDeps = exports.TMP_DIR_HOST = void 0;
+exports.parseBooleanInput = parseBooleanInput;
 exports.buildOptions = buildOptions;
+exports.buildSecretEnv = buildSecretEnv;
 exports.readyPoller = readyPoller;
 exports.stopTunnel = stopTunnel;
 exports.uploadLog = uploadLog;
@@ -92206,6 +92208,24 @@ const TMP_DIR_CONTAINER = '/tmp';
 exports.TMP_DIR_HOST = process.env['RUNNER_TEMP']
     ? (0, path_1.join)(process.env['RUNNER_TEMP'], '../')
     : (0, fs_1.mkdtempSync)((0, path_1.join)((0, os_1.tmpdir)(), `tb-tunnel-action`));
+const optionsMapping = options_json_1.default;
+/**
+ * Parses a boolean action input. Empty means "not set" (false). Accepts the
+ * same values as `core.getBooleanInput` (YAML 1.2 core schema booleans).
+ */
+function parseBooleanInput(name, value) {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+        return false;
+    }
+    if (['true', 'True', 'TRUE'].includes(trimmed)) {
+        return true;
+    }
+    if (['false', 'False', 'FALSE'].includes(trimmed)) {
+        return false;
+    }
+    throw new TypeError(`Input "${name}" must be a boolean (true or false), got "${value}"`);
+}
 function buildOptions() {
     const LOG_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, 'tb-tunnel.log');
     const READY_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, 'tb.ready');
@@ -92213,25 +92233,48 @@ function buildOptions() {
     // environment variables (see startTunnel), not positional CLI args, so they
     // do not leak into `ps aux` or `docker inspect` command-lines.
     const params = [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`];
-    const optionsMapping = options_json_1.default;
     for (const optionMapping of optionsMapping) {
+        if (!optionMapping.dockerOption) {
+            continue;
+        }
+        const input = (0, core_1.getInput)(optionMapping.actionOption, {
+            required: optionMapping.required
+        });
+        if (optionMapping.flag) {
+            if (parseBooleanInput(optionMapping.actionOption, input)) {
+                params.push(`--${optionMapping.dockerOption}`);
+            }
+        }
+        else if (input !== '') {
+            params.push(`--${optionMapping.dockerOption}=${input}`);
+        }
+    }
+    if ((0, core_1.isDebug)() && !params.includes('--debug')) {
+        params.push('--debug');
+    }
+    return params;
+}
+/**
+ * Collects options that are forwarded to the tunnel as environment variables
+ * (credential-bearing values). Every value is registered as a secret so it is
+ * masked in the workflow log.
+ */
+function buildSecretEnv() {
+    const env = {};
+    for (const optionMapping of optionsMapping) {
+        if (!optionMapping.env) {
+            continue;
+        }
         const input = (0, core_1.getInput)(optionMapping.actionOption, {
             required: optionMapping.required
         });
         if (input === '') {
             continue;
         }
-        if (optionMapping.flag) {
-            params.push(`--${optionMapping.dockerOption}`);
-        }
-        else {
-            params.push(`--${optionMapping.dockerOption}=${input}`);
-        }
+        (0, core_1.setSecret)(input);
+        env[optionMapping.env] = input;
     }
-    if ((0, core_1.isDebug)()) {
-        params.push('--debug');
-    }
-    return params;
+    return env;
 }
 async function readyPoller() {
     const readyFile = (0, path_1.join)(exports.TMP_DIR_HOST, 'tb.ready');
@@ -92320,23 +92363,27 @@ async function startTunnel() {
             baseEnv[envKey] = envValue;
         }
     }
+    const secretEnv = {
+        TESTINGBOT_KEY: key,
+        TESTINGBOT_SECRET: secret,
+        ...buildSecretEnv()
+    };
+    // `-e NAME` (without a value) makes docker read the value from its own
+    // environment, so secrets never appear on the docker command-line.
+    const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name]);
     const containerId = (await execWithReturn('docker', [
         'run',
         '--network=host',
         '--detach',
         '--rm',
-        '-e',
-        'TESTINGBOT_KEY',
-        '-e',
-        'TESTINGBOT_SECRET',
+        ...envArgs,
         '-v',
         `${exports.TMP_DIR_HOST}:${TMP_DIR_CONTAINER}`,
         containerName
     ].concat(buildOptions()), {
         env: {
             ...baseEnv,
-            TESTINGBOT_KEY: key,
-            TESTINGBOT_SECRET: secret
+            ...secretEnv
         }
     })).trim();
     let hasError = false;
@@ -142029,7 +142076,7 @@ module.exports = /*#__PURE__*/JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('[{"actionOption":"auth","dockerOption":"auth"},{"actionOption":"debug","dockerOption":"debug","flag":true},{"actionOption":"dns","dockerOption":"dns"},{"actionOption":"doctor","dockerOption":"doctor","flag":true},{"actionOption":"extraHeaders","dockerOption":"extra-headers"},{"actionOption":"fastFailRegexps","dockerOption":"fast-fail-regexps"},{"actionOption":"hubPort","dockerOption":"hubport"},{"actionOption":"metricsPort","dockerOption":"metrics-port"},{"actionOption":"noBump","dockerOption":"nobump","flag":true},{"actionOption":"noCache","dockerOption":"nocache","flag":true},{"actionOption":"noProxy","dockerOption":"noproxy","flag":true},{"actionOption":"pac","dockerOption":"pac"},{"actionOption":"proxy","dockerOption":"proxy"},{"actionOption":"proxyCredentials","dockerOption":"proxy-userpwd"},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"localProxy","dockerOption":"localproxy"},{"actionOption":"shared","dockerOption":"shared","flag":true},{"actionOption":"tunnelIdentifier","dockerOption":"tunnel-identifier"},{"actionOption":"web","dockerOption":"web"}]');
+module.exports = /*#__PURE__*/JSON.parse('[{"actionOption":"auth","env":"TESTINGBOT_AUTH"},{"actionOption":"debug","dockerOption":"debug","flag":true},{"actionOption":"dns","dockerOption":"dns"},{"actionOption":"doctor","dockerOption":"doctor","flag":true},{"actionOption":"extraHeaders","dockerOption":"extra-headers"},{"actionOption":"fastFailRegexps","dockerOption":"fast-fail-regexps"},{"actionOption":"hubPort","dockerOption":"hubport"},{"actionOption":"metricsPort","dockerOption":"metrics-port"},{"actionOption":"noBump","dockerOption":"nobump","flag":true},{"actionOption":"noCache","dockerOption":"nocache","flag":true},{"actionOption":"noProxy","dockerOption":"noproxy","flag":true},{"actionOption":"pac","dockerOption":"pac"},{"actionOption":"proxy","dockerOption":"proxy"},{"actionOption":"proxyCredentials","env":"TESTINGBOT_PROXY_USERPWD"},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"localProxy","dockerOption":"localproxy"},{"actionOption":"shared","dockerOption":"shared","flag":true},{"actionOption":"tunnelIdentifier","dockerOption":"tunnel-identifier"},{"actionOption":"web","dockerOption":"web"}]');
 
 /***/ })
 

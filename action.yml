@@ -28,7 +28,7 @@ inputs:
         required: false
         default: '60'
     auth:
-        description: Performs Basic Authentication for specific hosts, only works with HTTP.
+        description: "Performs Basic Authentication for specific hosts, only works with HTTP. Format: host:port:user:password, comma separated for several. Passed to the tunnel as an environment variable and masked in logs."
         required: false
     dns:
         description: "Use a custom DNS server. For example: 8.8.8.8"
@@ -64,7 +64,7 @@ inputs:
         description: "Specify an upstream proxy: PROXYHOST:PROXYPORT"
         required: false
     proxyCredentials:
-        description: Username and password required to access the proxy configured with proxy
+        description: "Username and password (user:password) required to access the proxy configured with proxy. Passed to the tunnel as an environment variable and masked in logs."
         required: false
     sePort:
         description: The local port your Selenium test should connect to. Default port is 4445

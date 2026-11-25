@@ -9,6 +9,8 @@ import {join} from 'path'
 import {
     artifactDeps,
     buildOptions,
+    buildSecretEnv,
+    parseBooleanInput,
     readyPoller,
     stopTunnel,
     uploadLog,
@@ -114,7 +116,11 @@ describe('buildOptions', () => {
 
         const opts = buildOptions()
 
-        assert.ok(opts.includes('--auth=user:pass'))
+        // Credential-bearing options are passed via env, never as CLI args
+        assert.ok(!opts.some(o => o.startsWith('--auth')))
+        assert.ok(!opts.some(o => o.startsWith('--proxy-userpwd')))
+        assert.ok(!opts.some(o => o.includes('user:pass')))
+        assert.ok(!opts.some(o => o.includes('u:p')))
         assert.ok(opts.includes('--pac=http://pac.url'))
         assert.ok(opts.includes('--se-port=4446'))
         assert.ok(opts.includes('--localproxy=9090'))
@@ -123,8 +129,104 @@ describe('buildOptions', () => {
         assert.ok(opts.includes('--web=/tmp/www'))
         assert.ok(opts.includes('--extra-headers={"X-Foo":"bar"}'))
         assert.ok(opts.includes('--proxy=proxy.host:8080'))
-        assert.ok(opts.includes('--proxy-userpwd=u:p'))
         assert.ok(opts.includes('--fast-fail-regexps=*.example.com'))
+    })
+})
+
+describe('buildOptions (boolean flags)', () => {
+    let getInputStub: sinon.SinonStub
+    let isDebugStub: sinon.SinonStub
+
+    beforeEach(() => {
+        getInputStub = sinon.stub(core, 'getInput')
+        isDebugStub = sinon.stub(core, 'isDebug').returns(false)
+    })
+
+    afterEach(() => {
+        sinon.restore()
+    })
+
+    it('should not add a flag when its input is "false"', async () => {
+        getInputStub.withArgs('shared', sinon.match.any).returns('false')
+        getInputStub.withArgs('noBump', sinon.match.any).returns('False')
+        getInputStub.withArgs('debug', sinon.match.any).returns('FALSE')
+        getInputStub.returns('')
+
+        const opts = buildOptions()
+
+        assert.ok(!opts.includes('--shared'))
+        assert.ok(!opts.includes('--nobump'))
+        assert.ok(!opts.includes('--debug'))
+    })
+
+    it('should reject non-boolean values for flag inputs', async () => {
+        getInputStub.withArgs('shared', sinon.match.any).returns('yes')
+        getInputStub.returns('')
+
+        assert.throws(() => buildOptions(), /Input "shared" must be a boolean/)
+    })
+
+    it('should add --debug only once when both debug input and runner debug are on', async () => {
+        getInputStub.withArgs('debug', sinon.match.any).returns('true')
+        getInputStub.returns('')
+        isDebugStub.returns(true)
+
+        const opts = buildOptions()
+
+        assert.equal(opts.filter(o => o === '--debug').length, 1)
+    })
+})
+
+describe('parseBooleanInput', () => {
+    it('treats empty input as false', () => {
+        assert.equal(parseBooleanInput('x', ''), false)
+        assert.equal(parseBooleanInput('x', '  '), false)
+    })
+
+    it('accepts YAML booleans', () => {
+        assert.equal(parseBooleanInput('x', 'true'), true)
+        assert.equal(parseBooleanInput('x', 'TRUE'), true)
+        assert.equal(parseBooleanInput('x', 'false'), false)
+    })
+})
+
+describe('buildSecretEnv', () => {
+    let getInputStub: sinon.SinonStub
+    let setSecretStub: sinon.SinonStub
+
+    beforeEach(() => {
+        getInputStub = sinon.stub(core, 'getInput')
+        setSecretStub = sinon.stub(core, 'setSecret')
+    })
+
+    afterEach(() => {
+        sinon.restore()
+    })
+
+    it('maps auth and proxyCredentials to env vars and masks them', async () => {
+        getInputStub
+            .withArgs('auth', sinon.match.any)
+            .returns('host:80:user:pass')
+        getInputStub
+            .withArgs('proxyCredentials', sinon.match.any)
+            .returns('u:p')
+        getInputStub.returns('')
+
+        const env = buildSecretEnv()
+
+        assert.deepEqual(env, {
+            TESTINGBOT_AUTH: 'host:80:user:pass',
+            TESTINGBOT_PROXY_USERPWD: 'u:p'
+        })
+        assert.ok(setSecretStub.calledWith('host:80:user:pass'))
+        assert.ok(setSecretStub.calledWith('u:p'))
+    })
+
+    it('returns nothing when no secret inputs are set', async () => {
+        getInputStub.returns('')
+
+        assert.deepEqual(buildSecretEnv(), {})
+        assert.ok(setSecretStub.notCalled)
     })
 })
 
@@ -338,6 +440,34 @@ describe('startTunnel', () => {
         }
         assert.equal(runOpts.env.TESTINGBOT_KEY, 'my-key')
         assert.equal(runOpts.env.TESTINGBOT_SECRET, 'my-secret')
+    })
+
+    it('should forward auth/proxy credentials as env vars, not CLI args', async () => {
+        getInputStub.withArgs('auth', sinon.match.any).returns('h:80:u:pw')
+        execStub.onFirstCall().resolves(0)
+        execStub
+            .onSecondCall()
+            .callsFake(
+                async (
+                    cmd: string,
+                    args?: string[],
+                    opts?: {listeners?: {stdout?: (data: Buffer) => void}}
+                ) => {
+                    opts?.listeners?.stdout?.(Buffer.from('container-id-789\n'))
+                    fs.writeFileSync(join(TMP_DIR_HOST, 'tb.ready'), '')
+                    return 0
+                }
+            )
+
+        await startTunnel()
+
+        const runArgs = execStub.secondCall.args[1] as string[]
+        assert.ok(runArgs.includes('TESTINGBOT_AUTH'))
+        assert.ok(!runArgs.some(a => a.includes('h:80:u:pw')))
+        const runOpts = execStub.secondCall.args[2] as {
+            env: NodeJS.ProcessEnv
+        }
+        assert.equal(runOpts.env.TESTINGBOT_AUTH, 'h:80:u:pw')
     })
 
     it('should stop container and throw on readyPoller timeout @slow', async () => {
