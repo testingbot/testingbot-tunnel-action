@@ -114402,7 +114402,17 @@ ${consoleOutput}`);
 var retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
   (a) => a * 1e3
 );
+function assertCredentials() {
+  for (const name of ["key", "secret"]) {
+    if ((toolkit.getInput(name) ?? "").trim() === "") {
+      throw new NonRetryableError(
+        `Input required and not supplied: ${name}. Workflows triggered by Dependabot or by pull requests from forks cannot read repository Actions secrets.`
+      );
+    }
+  }
+}
 async function run() {
+  assertCredentials();
   const retryTimeout = (parseInt(toolkit.getInput("retryTimeout"), 10) || 10) * 1e3 * 60;
   const startTime = Date.now();
   const workDir = createWorkDir();

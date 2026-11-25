@@ -14,6 +14,8 @@ describe('index.run', () => {
 
     beforeEach(() => {
         getInputStub = sinon.stub(toolkit, 'getInput')
+        getInputStub.withArgs('key').returns('test-key')
+        getInputStub.withArgs('secret').returns('test-secret')
         saveStateStub = sinon.stub(toolkit, 'saveState')
         setOutputStub = sinon.stub(toolkit, 'setOutput')
         sinon.stub(toolkit, 'warning')
@@ -120,4 +122,19 @@ describe('index.run', () => {
         assert.ok(startTunnelStub.calledOnce)
         assert.ok(!saveStateStub.calledWith('containerId', sinon.match.any))
     })
+
+    for (const name of ['key', 'secret']) {
+        it(`fails without retrying when ${name} is empty`, async () => {
+            getInputStub.withArgs('retryTimeout').returns('10')
+            getInputStub.withArgs(name).returns('  ')
+
+            await assert.rejects(() => run(), {
+                name: 'NonRetryableError',
+                message: new RegExp(`Input required and not supplied: ${name}`)
+            })
+
+            assert.ok(startTunnelStub.notCalled)
+            assert.ok(runDoctorStub.notCalled)
+        })
+    }
 })
