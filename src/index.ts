@@ -3,6 +3,7 @@ import {
     createWorkDir,
     logFilePath,
     NonRetryableError,
+    parseBooleanInput,
     runDoctor,
     startTunnel
 } from './container'
@@ -30,6 +31,9 @@ function assertCredentials(): void {
 
 export async function run(): Promise<void> {
     assertCredentials()
+    // Validated here so a typo fails the job up front instead of surfacing
+    // only in the post step, after the tests ran.
+    parseBooleanInput('uploadLogFile', toolkit.getInput('uploadLogFile'))
     await assertDockerAvailable()
 
     const retryTimeout =
@@ -69,10 +73,15 @@ export async function run(): Promise<void> {
             if (e instanceof NonRetryableError) {
                 throw e
             }
-            if (Date.now() - startTime >= retryTimeout) {
+            const remaining = retryTimeout - (Date.now() - startTime)
+            if (remaining <= 0) {
                 break
             }
-            const delay = retryDelays[Math.min(retryDelays.length - 1, i)]
+            // Never wait past retryTimeout: the last wait is cut short.
+            const delay = Math.min(
+                retryDelays[Math.min(retryDelays.length - 1, i)],
+                remaining
+            )
             const message = e instanceof Error ? e.message : String(e)
             toolkit.warning(
                 `Error occurred on attempt ${

@@ -114428,6 +114428,7 @@ function assertCredentials() {
 }
 async function run() {
   assertCredentials();
+  parseBooleanInput("uploadLogFile", toolkit.getInput("uploadLogFile"));
   await assertDockerAvailable();
   const retryTimeout = (parseInt(toolkit.getInput("retryTimeout"), 10) || 10) * 1e3 * 60;
   const startTime = Date.now();
@@ -114457,10 +114458,14 @@ async function run() {
       if (e instanceof NonRetryableError) {
         throw e;
       }
-      if (Date.now() - startTime >= retryTimeout) {
+      const remaining = retryTimeout - (Date.now() - startTime);
+      if (remaining <= 0) {
         break;
       }
-      const delay4 = retryDelays[Math.min(retryDelays.length - 1, i)];
+      const delay4 = Math.min(
+        retryDelays[Math.min(retryDelays.length - 1, i)],
+        remaining
+      );
       const message = e instanceof Error ? e.message : String(e);
       toolkit.warning(
         `Error occurred on attempt ${i + 1} (${message}). Retrying in ${delay4} ms...`
