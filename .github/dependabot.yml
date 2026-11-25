@@ -12,6 +12,10 @@ updates:
           # typescript-eslint supports TypeScript < 6.1 only.
           - dependency-name: typescript
             update-types: [version-update:semver-major]
+          # Types must match the action's runtime (node24 in action.yml);
+          # newer majors would allow APIs that don't exist at runtime.
+          - dependency-name: '@types/node'
+            update-types: [version-update:semver-major]
     - package-ecosystem: github-actions
       directory: /
       schedule:

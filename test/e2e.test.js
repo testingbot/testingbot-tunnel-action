@@ -3,8 +3,14 @@ const {remote} = require('webdriverio')
 
 async function main() {
     const browser = await remote({
-        user: process.env.TB_KEY,
-        key: process.env.TB_SECRET,
+        // Explicit hub: without it, WebdriverIO guesses the cloud provider
+        // from the key's length and fails on anything but 32 characters.
+        protocol: 'https',
+        hostname: 'hub.testingbot.com',
+        port: 443,
+        path: '/wd/hub',
+        user: (process.env.TB_KEY ?? '').trim(),
+        key: (process.env.TB_SECRET ?? '').trim(),
         logLevel: 'warn',
         capabilities: {
             browserName: 'chrome',

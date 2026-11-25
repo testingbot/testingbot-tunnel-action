@@ -11,7 +11,25 @@ export const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
     a => a * 1000
 )
 
+/**
+ * Fails before any retries when credentials are missing: retrying cannot
+ * fix an empty input, and would otherwise burn the whole retryTimeout.
+ */
+function assertCredentials(): void {
+    for (const name of ['key', 'secret']) {
+        if ((toolkit.getInput(name) ?? '').trim() === '') {
+            throw new NonRetryableError(
+                `Input required and not supplied: ${name}. ` +
+                    'Workflows triggered by Dependabot or by pull requests ' +
+                    'from forks cannot read repository Actions secrets.'
+            )
+        }
+    }
+}
+
 export async function run(): Promise<void> {
+    assertCredentials()
+
     const retryTimeout =
         (parseInt(toolkit.getInput('retryTimeout'), 10) || 10) * 1000 * 60
     const startTime = Date.now()
