@@ -98,4 +98,29 @@ describe('post.run', () => {
 
         assert.ok(uploadLogStub.calledOnce)
     })
+
+    it('reports a stop failure, not an invalid uploadLogFile', async () => {
+        getStateStub.withArgs('containerId').returns('abc123')
+        getInputStub.withArgs('uploadLogFile').returns('yes please')
+        stopTunnelStub.rejects(new Error('docker died'))
+
+        await assert.rejects(() => run(), {message: 'docker died'})
+
+        assert.ok(uploadLogStub.notCalled)
+        assert.ok(
+            warningStub.calledWithMatch(
+                /Input "uploadLogFile" must be a boolean/
+            )
+        )
+    })
+
+    it('still stops the tunnel when uploadLogFile is invalid', async () => {
+        getStateStub.withArgs('containerId').returns('abc123')
+        getInputStub.withArgs('uploadLogFile').returns('yes please')
+
+        await run()
+
+        assert.ok(stopTunnelStub.calledOnceWith('abc123'))
+        assert.ok(uploadLogStub.notCalled)
+    })
 })

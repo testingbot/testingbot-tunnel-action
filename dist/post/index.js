@@ -114030,9 +114030,24 @@ async function uploadLog(workDir, artifactName = DEFAULT_LOG_ARTIFACT_NAME) {
 }
 
 // src/post.ts
+function shouldUploadLog() {
+  const value = toolkit.getInput("uploadLogFile");
+  if (value.trim() === "") {
+    return true;
+  }
+  try {
+    return parseBooleanInput("uploadLogFile", value);
+  } catch (e) {
+    toolkit.warning(
+      `${e instanceof Error ? e.message : String(e)}. Not uploading the TestingBot Tunnel log.`
+    );
+    return false;
+  }
+}
 async function run() {
   const containerId = toolkit.getState("containerId");
   const workDir = toolkit.getState("workDir");
+  const shouldUpload = shouldUploadLog();
   try {
     if (containerId) {
       await stopTunnel(containerId);
@@ -114040,8 +114055,6 @@ async function run() {
       toolkit.warning("No active TestingBot Tunnel available.");
     }
   } finally {
-    const uploadInput = toolkit.getInput("uploadLogFile");
-    const shouldUpload = uploadInput.trim() === "" || parseBooleanInput("uploadLogFile", uploadInput);
     if (workDir && shouldUpload) {
       await uploadLog(
         workDir,

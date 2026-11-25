@@ -6,9 +6,30 @@ import {
 } from './container'
 import {toolkit} from './toolkit'
 
+/**
+ * Whether to upload the tunnel log. An invalid value is reported as a
+ * warning instead of thrown: the main step already fails on it, and a throw
+ * here would hide an error from stopping the tunnel.
+ */
+function shouldUploadLog(): boolean {
+    const value = toolkit.getInput('uploadLogFile')
+    if (value.trim() === '') {
+        return true
+    }
+    try {
+        return parseBooleanInput('uploadLogFile', value)
+    } catch (e) {
+        toolkit.warning(
+            `${e instanceof Error ? e.message : String(e)}. Not uploading the TestingBot Tunnel log.`
+        )
+        return false
+    }
+}
+
 export async function run(): Promise<void> {
     const containerId = toolkit.getState('containerId')
     const workDir = toolkit.getState('workDir')
+    const shouldUpload = shouldUploadLog()
 
     try {
         if (containerId) {
@@ -19,10 +40,6 @@ export async function run(): Promise<void> {
     } finally {
         // Upload even when the tunnel never started (no container ID) or
         // stopping it failed: that is when the log is most useful.
-        const uploadInput = toolkit.getInput('uploadLogFile')
-        const shouldUpload =
-            uploadInput.trim() === '' ||
-            parseBooleanInput('uploadLogFile', uploadInput)
         if (workDir && shouldUpload) {
             await uploadLog(
                 workDir,

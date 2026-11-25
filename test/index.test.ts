@@ -25,7 +25,7 @@ describe('index.run', () => {
     let assertDockerStub: sinon.SinonStub
 
     beforeEach(() => {
-        getInputStub = sinon.stub(toolkit, 'getInput')
+        getInputStub = sinon.stub(toolkit, 'getInput').returns('')
         getInputStub.withArgs('key').returns('test-key')
         getInputStub.withArgs('secret').returns('test-secret')
         saveStateStub = sinon.stub(toolkit, 'saveState')
@@ -106,6 +106,40 @@ describe('index.run', () => {
         } finally {
             clock.restore()
         }
+    })
+
+    it('cuts the last wait short instead of waiting past retryTimeout', async () => {
+        const clock = sinon.useFakeTimers()
+        // 1 minute: the backoff reaches 47s, and the next 40s delay would
+        // overshoot to 87s if it weren't capped.
+        getInputStub.withArgs('retryTimeout').returns('1')
+        startTunnelStub.rejects(new Error('always fails'))
+
+        try {
+            let settled = false
+            const rejection = (async () => {
+                await assert.rejects(run(), {
+                    message: 'Timed out waiting for Tunnel to start'
+                })
+                settled = true
+            })()
+            await clock.tickAsync(61 * 1000)
+            assert.ok(settled, 'should give up once retryTimeout has passed')
+            await rejection
+        } finally {
+            clock.restore()
+        }
+    })
+
+    it('fails up front on an invalid uploadLogFile', async () => {
+        getInputStub.withArgs('uploadLogFile').returns('yes please')
+
+        await assert.rejects(() => run(), {
+            message: /Input "uploadLogFile" must be a boolean/
+        })
+
+        assert.ok(startTunnelStub.notCalled)
+        assert.ok(!saveStateStub.calledWith('workDir', sinon.match.any))
     })
 
     it('defaults retryTimeout to 10 when input is empty or non-numeric', async () => {
