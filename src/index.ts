@@ -1,4 +1,3 @@
-import {getInput, saveState, setFailed, setOutput, warning} from '@actions/core'
 import {
     createWorkDir,
     logFilePath,
@@ -6,6 +5,7 @@ import {
     runDoctor,
     startTunnel
 } from './container'
+import {toolkit} from './toolkit'
 
 export const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
     a => a * 1000
@@ -13,17 +13,17 @@ export const retryDelays = [1, 1, 1, 2, 3, 4, 5, 10, 20, 40, 60].map(
 
 export async function run(): Promise<void> {
     const retryTimeout =
-        (parseInt(getInput('retryTimeout'), 10) || 10) * 1000 * 60
+        (parseInt(toolkit.getInput('retryTimeout'), 10) || 10) * 1000 * 60
     const startTime = Date.now()
 
     const workDir = createWorkDir()
     // Saved up front so the post step can find the log even if startup fails.
-    saveState('workDir', workDir)
+    toolkit.saveState('workDir', workDir)
 
     try {
         await runDoctor()
     } catch (e) {
-        warning(
+        toolkit.warning(
             `TestingBot Tunnel diagnostics failed: ${
                 e instanceof Error ? e.message : String(e)
             }`
@@ -33,10 +33,13 @@ export async function run(): Promise<void> {
     for (let i = 0; ; i++) {
         try {
             const containerId = await startTunnel(workDir)
-            saveState('containerId', containerId)
-            setOutput('container-id', containerId)
-            setOutput('tunnel-identifier', getInput('tunnelIdentifier'))
-            setOutput('log-file', logFilePath(workDir))
+            toolkit.saveState('containerId', containerId)
+            toolkit.setOutput('container-id', containerId)
+            toolkit.setOutput(
+                'tunnel-identifier',
+                toolkit.getInput('tunnelIdentifier')
+            )
+            toolkit.setOutput('log-file', logFilePath(workDir))
             return
         } catch (e) {
             if (e instanceof NonRetryableError) {
@@ -47,7 +50,7 @@ export async function run(): Promise<void> {
             }
             const delay = retryDelays[Math.min(retryDelays.length - 1, i)]
             const message = e instanceof Error ? e.message : String(e)
-            warning(
+            toolkit.warning(
                 `Error occurred on attempt ${
                     i + 1
                 } (${message}). Retrying in ${delay} ms...`
@@ -62,6 +65,8 @@ export async function run(): Promise<void> {
 if (require.main === module) {
     // eslint-disable-next-line github/no-then
     run().catch(error =>
-        setFailed(error instanceof Error ? error.message : String(error))
+        toolkit.setFailed(
+            error instanceof Error ? error.message : String(error)
+        )
     )
 }

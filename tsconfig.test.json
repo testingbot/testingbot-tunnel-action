@@ -9,8 +9,17 @@
         "resolveJsonModule": true,
         "moduleResolution": "node10",
         "ignoreDeprecations": "6.0",
-        "sourceMap": true
+        "sourceMap": true,
+        "types": [
+            "node",
+            "mocha"
+        ]
     },
-    "include": ["src/**/*.ts", "test/**/*.ts"],
-    "exclude": ["node_modules"]
+    "include": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules"
+    ]
 }

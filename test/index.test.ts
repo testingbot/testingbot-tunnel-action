@@ -1,7 +1,7 @@
 import {describe, it, beforeEach, afterEach} from 'mocha'
 import {strict as assert} from 'assert'
 import * as sinon from 'sinon'
-import * as core from '@actions/core'
+import {toolkit} from '../src/toolkit'
 import * as container from '../src/container'
 import {run, retryDelays} from '../src/index'
 
@@ -13,10 +13,10 @@ describe('index.run', () => {
     let runDoctorStub: sinon.SinonStub
 
     beforeEach(() => {
-        getInputStub = sinon.stub(core, 'getInput')
-        saveStateStub = sinon.stub(core, 'saveState')
-        setOutputStub = sinon.stub(core, 'setOutput')
-        sinon.stub(core, 'warning')
+        getInputStub = sinon.stub(toolkit, 'getInput')
+        saveStateStub = sinon.stub(toolkit, 'saveState')
+        setOutputStub = sinon.stub(toolkit, 'setOutput')
+        sinon.stub(toolkit, 'warning')
         startTunnelStub = sinon.stub(container, 'startTunnel')
         sinon.stub(container, 'createWorkDir').returns('/tmp/tb-tunnel-test')
         runDoctorStub = sinon.stub(container, 'runDoctor').resolves()

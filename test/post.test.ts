@@ -1,7 +1,7 @@
 import {describe, it, beforeEach, afterEach} from 'mocha'
 import {strict as assert} from 'assert'
 import * as sinon from 'sinon'
-import * as core from '@actions/core'
+import {toolkit} from '../src/toolkit'
 import * as container from '../src/container'
 import {run} from '../src/post'
 
@@ -13,12 +13,12 @@ describe('post.run', () => {
     let uploadLogStub: sinon.SinonStub
 
     beforeEach(() => {
-        getStateStub = sinon.stub(core, 'getState')
+        getStateStub = sinon.stub(toolkit, 'getState')
         getStateStub.withArgs('workDir').returns('/tmp/tb-tunnel-test')
         getStateStub.returns('')
-        getInputStub = sinon.stub(core, 'getInput').returns('')
-        warningStub = sinon.stub(core, 'warning')
-        sinon.stub(core, 'info')
+        getInputStub = sinon.stub(toolkit, 'getInput').returns('')
+        warningStub = sinon.stub(toolkit, 'warning')
+        sinon.stub(toolkit, 'info')
         stopTunnelStub = sinon.stub(container, 'stopTunnel').resolves()
         uploadLogStub = sinon.stub(container, 'uploadLog').resolves()
     })

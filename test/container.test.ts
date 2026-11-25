@@ -1,13 +1,11 @@
 import {describe, it, beforeEach, afterEach} from 'mocha'
 import {strict as assert} from 'assert'
 import * as sinon from 'sinon'
-import * as core from '@actions/core'
-import * as actionsExec from '@actions/exec'
+import {toolkit} from '../src/toolkit'
 import * as fs from 'fs'
 import {join} from 'path'
 
 import {
-    artifactDeps,
     buildMounts,
     buildOptions,
     buildSecretEnv,
@@ -67,8 +65,8 @@ describe('buildOptions', () => {
     let isDebugStub: sinon.SinonStub
 
     beforeEach(() => {
-        getInputStub = sinon.stub(core, 'getInput')
-        isDebugStub = sinon.stub(core, 'isDebug').returns(false)
+        getInputStub = sinon.stub(toolkit, 'getInput')
+        isDebugStub = sinon.stub(toolkit, 'isDebug').returns(false)
     })
 
     afterEach(() => {
@@ -182,8 +180,8 @@ describe('buildOptions (boolean flags)', () => {
     let isDebugStub: sinon.SinonStub
 
     beforeEach(() => {
-        getInputStub = sinon.stub(core, 'getInput')
-        isDebugStub = sinon.stub(core, 'isDebug').returns(false)
+        getInputStub = sinon.stub(toolkit, 'getInput')
+        isDebugStub = sinon.stub(toolkit, 'isDebug').returns(false)
     })
 
     afterEach(() => {
@@ -226,8 +224,8 @@ describe('buildOptions (tunnel 5.x inputs)', () => {
     const originalWorkspace = process.env['GITHUB_WORKSPACE']
 
     beforeEach(() => {
-        getInputStub = sinon.stub(core, 'getInput')
-        sinon.stub(core, 'isDebug').returns(false)
+        getInputStub = sinon.stub(toolkit, 'getInput')
+        sinon.stub(toolkit, 'isDebug').returns(false)
         process.env['GITHUB_WORKSPACE'] = '/home/runner/work/repo'
     })
 
@@ -334,7 +332,7 @@ describe('buildOptions (tunnel 5.x inputs)', () => {
     })
 
     it('forwards metricsAuth and proxyTestingbotCredentials as secret env vars', async () => {
-        sinon.stub(core, 'setSecret')
+        sinon.stub(toolkit, 'setSecret')
         getInputStub.withArgs('metricsAuth', sinon.match.any).returns('m:pw')
         getInputStub
             .withArgs('proxyTestingbotCredentials', sinon.match.any)
@@ -355,15 +353,15 @@ describe('runDoctor', () => {
     let warningStub: sinon.SinonStub
 
     beforeEach(() => {
-        sinon.stub(core, 'info')
-        sinon.stub(core, 'setSecret')
-        sinon.stub(core, 'isDebug').returns(false)
-        warningStub = sinon.stub(core, 'warning')
-        getInputStub = sinon.stub(core, 'getInput')
+        sinon.stub(toolkit, 'info')
+        sinon.stub(toolkit, 'setSecret')
+        sinon.stub(toolkit, 'isDebug').returns(false)
+        warningStub = sinon.stub(toolkit, 'warning')
+        getInputStub = sinon.stub(toolkit, 'getInput')
         getInputStub.withArgs('key', sinon.match.any).returns('my-key')
         getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
         getInputStub.withArgs('tbVersion').returns('5.1')
-        execStub = sinon.stub(actionsExec, 'exec').resolves(0)
+        execStub = sinon.stub(toolkit, 'exec').resolves(0)
     })
 
     afterEach(() => {
@@ -423,8 +421,8 @@ describe('buildSecretEnv', () => {
     let setSecretStub: sinon.SinonStub
 
     beforeEach(() => {
-        getInputStub = sinon.stub(core, 'getInput')
-        setSecretStub = sinon.stub(core, 'setSecret')
+        getInputStub = sinon.stub(toolkit, 'getInput')
+        setSecretStub = sinon.stub(toolkit, 'setSecret')
     })
 
     afterEach(() => {
@@ -481,8 +479,8 @@ describe('readyPoller', () => {
     beforeEach(() => {
         workDir = createWorkDir()
         pollDeps.intervalMs = 20
-        execStub = sinon.stub(actionsExec, 'exec')
-        getInputStub = sinon.stub(core, 'getInput').returns('')
+        execStub = sinon.stub(toolkit, 'exec')
+        getInputStub = sinon.stub(toolkit, 'getInput').returns('')
     })
 
     afterEach(() => {
@@ -545,8 +543,8 @@ describe('stopTunnel', () => {
     let infoStub: sinon.SinonStub
 
     beforeEach(() => {
-        infoStub = sinon.stub(core, 'info')
-        execStub = sinon.stub(actionsExec, 'exec')
+        infoStub = sinon.stub(toolkit, 'info')
+        execStub = sinon.stub(toolkit, 'exec')
     })
 
     afterEach(() => {
@@ -585,10 +583,10 @@ describe('uploadLog', () => {
     let workDir: string
 
     beforeEach(() => {
-        sinon.stub(core, 'info')
-        sinon.stub(core, 'warning')
+        sinon.stub(toolkit, 'info')
+        sinon.stub(toolkit, 'warning')
         uploadArtifactStub = sinon.stub()
-        sinon.stub(artifactDeps, 'createClient').returns({
+        sinon.stub(toolkit, 'createArtifactClient').returns({
             uploadArtifact: uploadArtifactStub
         })
         workDir = createWorkDir()
@@ -663,7 +661,7 @@ describe('uploadLog', () => {
         // uploadLog catches errors internally — should not throw
         await uploadLog(workDir)
         assert.ok(uploadArtifactStub.calledTwice)
-        assert.ok((core.warning as sinon.SinonStub).calledOnce)
+        assert.ok((toolkit.warning as sinon.SinonStub).calledOnce)
     })
 })
 
@@ -675,17 +673,17 @@ describe('startTunnel', () => {
     const originalInterval = pollDeps.intervalMs
 
     beforeEach(() => {
-        sinon.stub(core, 'info')
-        warningStub = sinon.stub(core, 'warning')
-        sinon.stub(core, 'isDebug').returns(false)
-        sinon.stub(core, 'setSecret')
-        getInputStub = sinon.stub(core, 'getInput')
+        sinon.stub(toolkit, 'info')
+        warningStub = sinon.stub(toolkit, 'warning')
+        sinon.stub(toolkit, 'isDebug').returns(false)
+        sinon.stub(toolkit, 'setSecret')
+        getInputStub = sinon.stub(toolkit, 'getInput')
         getInputStub.withArgs('tbVersion').returns('latest')
         getInputStub.withArgs('key', sinon.match.any).returns('my-key')
         getInputStub.withArgs('secret', sinon.match.any).returns('my-secret')
         getInputStub.returns('')
 
-        execStub = sinon.stub(actionsExec, 'exec')
+        execStub = sinon.stub(toolkit, 'exec')
         workDir = createWorkDir()
         pollDeps.intervalMs = 20
     })
@@ -816,7 +814,7 @@ describe('startTunnel', () => {
     })
 
     it('should only print the current attempt from the log file', async () => {
-        const infoStub = core.info as sinon.SinonStub
+        const infoStub = toolkit.info as sinon.SinonStub
         fs.writeFileSync(join(workDir, 'tb-tunnel.log'), 'previous attempt\n')
         fakeDocker(execStub, {
             run: () => {
