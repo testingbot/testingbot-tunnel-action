@@ -10,6 +10,7 @@ describe('index.run', () => {
     let saveStateStub: sinon.SinonStub
     let setOutputStub: sinon.SinonStub
     let startTunnelStub: sinon.SinonStub
+    let runDoctorStub: sinon.SinonStub
 
     beforeEach(() => {
         getInputStub = sinon.stub(core, 'getInput')
@@ -18,6 +19,7 @@ describe('index.run', () => {
         sinon.stub(core, 'warning')
         startTunnelStub = sinon.stub(container, 'startTunnel')
         sinon.stub(container, 'createWorkDir').returns('/tmp/tb-tunnel-test')
+        runDoctorStub = sinon.stub(container, 'runDoctor').resolves()
     })
 
     afterEach(() => {
@@ -95,6 +97,18 @@ describe('index.run', () => {
         await run()
 
         assert.ok(saveStateStub.calledWith('containerId', 'ok'))
+    })
+
+    it('runs diagnostics once before starting, and survives a doctor failure', async () => {
+        getInputStub.withArgs('retryTimeout').returns('10')
+        runDoctorStub.rejects(new Error('doctor broke'))
+        startTunnelStub.resolves('container-abc')
+
+        await run()
+
+        assert.ok(runDoctorStub.calledOnce)
+        assert.ok(runDoctorStub.calledBefore(startTunnelStub))
+        assert.ok(saveStateStub.calledWith('containerId', 'container-abc'))
     })
 
     it('does not retry a NonRetryableError', async () => {

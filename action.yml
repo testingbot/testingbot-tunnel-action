@@ -16,7 +16,7 @@ inputs:
         description: Enables debug messages. Will output request/response headers.
         required: false
     tbVersion:
-        description: Version of the TestingBot Tunnel docker image.
+        description: "Version (tag) of the testingbot/tunnel Docker image, for example 5.1. Pin a version for reproducible builds."
         required: false
         default: 'latest'
     retryTimeout:
@@ -34,13 +34,13 @@ inputs:
         description: "Use a custom DNS server. For example: 8.8.8.8"
         required: false
     doctor:
-        description: Perform sanity/health checks to detect possible misconfiguration or problems.
+        description: Run the tunnel's diagnostics (--doctor) in a separate container before starting the tunnel and print the result. Never fails the step.
         required: false
     extraHeaders:
         description: "Inject extra headers in the requests the tunnel makes. Value should be a JSON string."
         required: false
     fastFailRegexps:
-        description: Specify domains you don't want to proxy, comma separated.
+        description: "Refuse hosts matching these regular expressions, comma separated. Prefix with ! for an exception (tunnel 5.0+), e.g. '.*,!ok\\.com'."
         required: false
     hubPort:
         description: Use this if you want to connect to port 80 on the TestingBot hub instead of the default port 4444.
@@ -79,7 +79,65 @@ inputs:
         description: A unique identifier for the Tunnel
         required: false
     web:
-        description: Point to a directory for testing — starts a local webserver serving that directory.
+        description: Directory to serve with the tunnel's built-in webserver. Relative paths are resolved against the workspace; the directory is mounted read-only into the container.
+        required: false
+    bindAddress:
+        description: "Interface the tunnel's local listeners (Selenium relay, local proxy, metrics, web) bind to. Defaults to 127.0.0.1. Use 0.0.0.0 only if tests run in another container or machine: the listeners are unauthenticated and the relay attaches your TestingBot credentials."
+        required: false
+        default: '127.0.0.1'
+    allowHosts:
+        description: "Only allow the tunnel to reach these hosts, comma separated (*.suffix for subdomains). Everything else is refused with 403. Tunnel 5.0+."
+        required: false
+    localhostPolicy:
+        description: "Set to 'deny' to refuse tunnel traffic to the runner's loopback interface. Tunnel 5.0+."
+        required: false
+    pacLocal:
+        description: "PAC file (path or https URL) the tunnel uses to choose an upstream proxy per destination. Not the same as pac, which configures the remote browser. Tunnel 5.0+."
+        required: false
+    pacLocalSha256:
+        description: SHA-256 the pacLocal document must have (64 hex characters). Required for plain http:// PAC URLs. Tunnel 5.0+.
+        required: false
+    proxyTestingbot:
+        description: "Separate upstream proxy (HOST:PORT) for the tunnel's own connection to TestingBot. Tunnel 5.0+."
+        required: false
+    proxyTestingbotCredentials:
+        description: "Credentials (user:password) for proxyTestingbot. Passed as an environment variable and masked in logs. Tunnel 5.0+."
+        required: false
+    proxyAuthScheme:
+        description: "Authentication scheme for the upstream proxy, e.g. 'negotiate' for Kerberos/SPNEGO. Tunnel 5.0+."
+        required: false
+    cacertFile:
+        description: Extra CA certificate (PEM) to trust, e.g. for a TLS-intercepting proxy. Relative paths are resolved against the workspace. Tunnel 5.0+.
+        required: false
+    nobumpDomains:
+        description: Domains, comma separated, for which SSL bumping is skipped. Tunnel 5.0+.
+        required: false
+    header:
+        description: "Request header rules for plain HTTP traffic, one per line (e.g. 'X-Env: staging' or '-Cookie'). Tunnel 5.0+."
+        required: false
+    responseHeader:
+        description: "Response header rules for plain HTTP traffic, one per line (e.g. '-Content-Security-Policy'). Tunnel 5.0+."
+        required: false
+    logHttp:
+        description: "Per-request logging: none, url, headers or errors (default), optionally per module, e.g. 'proxy:url,forwarder:none'. Tunnel 5.0+."
+        required: false
+    logFormat:
+        description: "Log format: 'text' (default) or 'json'. Tunnel 5.0+."
+        required: false
+    sshHostKey:
+        description: SHA-256 fingerprint the tunnel server's SSH host key must have. Tunnel 5.0+.
+        required: false
+    sshHostKeyPolicy:
+        description: "Set to 'require' to refuse to connect when no host key fingerprint is known. Tunnel 5.0+."
+        required: false
+    sshConnections:
+        description: Number of SSH connections to the tunnel server (1-8, default 4). Tunnel 5.1+.
+        required: false
+    metricsAuth:
+        description: "Basic auth credentials (user:password) for the /metrics endpoint. Passed as an environment variable and masked in logs. Tunnel 4.8+."
+        required: false
+    extraArgs:
+        description: "Additional tunnel command-line options, one per line (e.g. '--http-dial-timeout=10'), for options this action has no input for."
         required: false
     uploadLogFile:
         description: Upload the TestingBot log file as artifact. The log is also uploaded when the tunnel fails to start.

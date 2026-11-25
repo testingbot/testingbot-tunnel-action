@@ -92189,12 +92189,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEFAULT_LOG_ARTIFACT_NAME = exports.artifactDeps = exports.ContainerExitedError = exports.pollDeps = exports.NonRetryableError = exports.READY_FILE_NAME = exports.LOG_FILE_NAME = void 0;
+exports.DEFAULT_LOG_ARTIFACT_NAME = exports.artifactDeps = exports.ContainerExitedError = exports.pollDeps = exports.DEFAULT_BIND_ADDRESS = exports.NonRetryableError = exports.READY_FILE_NAME = exports.LOG_FILE_NAME = void 0;
 exports.createWorkDir = createWorkDir;
 exports.logFilePath = logFilePath;
 exports.parseBooleanInput = parseBooleanInput;
+exports.resolveHostPath = resolveHostPath;
 exports.buildOptions = buildOptions;
+exports.buildMounts = buildMounts;
 exports.buildSecretEnv = buildSecretEnv;
+exports.runDoctor = runDoctor;
 exports.getContainerState = getContainerState;
 exports.readyPoller = readyPoller;
 exports.stopTunnel = stopTunnel;
@@ -92238,6 +92241,7 @@ function logFilePath(workDir) {
     return (0, path_1.join)(workDir, exports.LOG_FILE_NAME);
 }
 const optionsMapping = options_json_1.default;
+exports.DEFAULT_BIND_ADDRESS = '127.0.0.1';
 /**
  * Parses a boolean action input. Empty means "not set" (false). Accepts the
  * same values as `core.getBooleanInput` (YAML 1.2 core schema booleans).
@@ -92255,33 +92259,90 @@ function parseBooleanInput(name, value) {
     }
     throw new TypeError(`Input "${name}" must be a boolean (true or false), got "${value}"`);
 }
-function buildOptions() {
+function inputLines(value) {
+    return value
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line !== '');
+}
+function isUrl(value) {
+    return /^https?:\/\//i.test(value);
+}
+/**
+ * Resolves a path input against the workspace, so relative paths work the
+ * same way they do for other actions.
+ */
+function resolveHostPath(value) {
+    return (0, path_1.resolve)(process.env['GITHUB_WORKSPACE'] || process.cwd(), value);
+}
+function optionValues(optionMapping) {
+    const input = (0, core_1.getInput)(optionMapping.actionOption, {
+        required: optionMapping.required
+    });
+    const values = optionMapping.multiple
+        ? inputLines(input)
+        : input === ''
+            ? []
+            : [input];
+    return optionMapping.path
+        ? values.map(v => (isUrl(v) ? v : resolveHostPath(v)))
+        : values;
+}
+/**
+ * Builds the tunnel's command-line options from the action inputs.
+ * `withFiles` adds the log and ready file options used for a normal run.
+ */
+function buildOptions(withFiles = true) {
     const LOG_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, exports.LOG_FILE_NAME);
     const READY_FILE = (0, path_1.join)(TMP_DIR_CONTAINER, exports.READY_FILE_NAME);
     // Credentials are passed to the tunnel via TESTINGBOT_KEY / TESTINGBOT_SECRET
     // environment variables (see startTunnel), not positional CLI args, so they
     // do not leak into `ps aux` or `docker inspect` command-lines.
-    const params = [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`];
+    const params = withFiles
+        ? [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]
+        : [];
     for (const optionMapping of optionsMapping) {
         if (!optionMapping.dockerOption) {
             continue;
         }
-        const input = (0, core_1.getInput)(optionMapping.actionOption, {
-            required: optionMapping.required
-        });
         if (optionMapping.flag) {
+            const input = (0, core_1.getInput)(optionMapping.actionOption, {
+                required: optionMapping.required
+            });
             if (parseBooleanInput(optionMapping.actionOption, input)) {
                 params.push(`--${optionMapping.dockerOption}`);
             }
+            continue;
         }
-        else if (input !== '') {
-            params.push(`--${optionMapping.dockerOption}=${input}`);
+        for (const value of optionValues(optionMapping)) {
+            params.push(`--${optionMapping.dockerOption}=${value}`);
         }
     }
     if ((0, core_1.isDebug)() && !params.includes('--debug')) {
         params.push('--debug');
     }
+    // Escape hatch for tunnel options this action has no input for yet.
+    params.push(...inputLines((0, core_1.getInput)('extraArgs')));
     return params;
+}
+/**
+ * Read-only bind mounts for inputs that point at files or directories on the
+ * runner (web, pacLocal, cacertFile). They are mounted at the same absolute
+ * path, so the option value works unchanged inside the container.
+ */
+function buildMounts() {
+    const mounts = [];
+    for (const optionMapping of optionsMapping) {
+        if (!optionMapping.path) {
+            continue;
+        }
+        for (const value of optionValues(optionMapping)) {
+            if (!isUrl(value)) {
+                mounts.push('-v', `${value}:${value}:ro`);
+            }
+        }
+    }
+    return mounts;
 }
 /**
  * Collects options that are forwarded to the tunnel as environment variables
@@ -92304,6 +92365,72 @@ function buildSecretEnv() {
         env[optionMapping.env] = input;
     }
     return env;
+}
+/**
+ * Environment for `docker run`: credentials (forwarded by name, so their
+ * values stay off the docker command-line) plus the listener bind address.
+ *
+ * The 5.x image sets TESTINGBOT_BIND_ADDRESS=0.0.0.0. Combined with
+ * --network=host that would expose the unauthenticated Selenium relay (which
+ * attaches the account credentials) and the local proxy to the runner's whole
+ * network, so it is narrowed to loopback unless bindAddress says otherwise.
+ * Passed as an env var rather than --bind-address so 4.x images, which do not
+ * know the option, keep working.
+ */
+function containerEnv() {
+    const key = (0, core_1.getInput)('key', { required: true });
+    const secret = (0, core_1.getInput)('secret', { required: true });
+    (0, core_1.setSecret)(key);
+    (0, core_1.setSecret)(secret);
+    const secretEnv = {
+        TESTINGBOT_KEY: key,
+        TESTINGBOT_SECRET: secret,
+        ...buildSecretEnv()
+    };
+    const bindAddress = (0, core_1.getInput)('bindAddress').trim() || exports.DEFAULT_BIND_ADDRESS;
+    const baseEnv = {};
+    for (const [envKey, envValue] of Object.entries(process.env)) {
+        if (envValue !== undefined) {
+            baseEnv[envKey] = envValue;
+        }
+    }
+    return {
+        args: [
+            ...Object.keys(secretEnv).flatMap(name => ['-e', name]),
+            '-e',
+            `TESTINGBOT_BIND_ADDRESS=${bindAddress}`
+        ],
+        env: { ...baseEnv, ...secretEnv }
+    };
+}
+function imageName() {
+    return `testingbot/tunnel:${(0, core_1.getInput)('tbVersion') || 'latest'}`;
+}
+/**
+ * Runs the tunnel's `--doctor` diagnostics in a one-off container when the
+ * doctor input is set. `--doctor` checks the configuration and exits without
+ * starting a tunnel, so it can't be combined with the real tunnel run.
+ * Diagnostics never fail the step.
+ */
+async function runDoctor() {
+    if (!parseBooleanInput('doctor', (0, core_1.getInput)('doctor'))) {
+        return;
+    }
+    (0, core_1.info)('Running TestingBot Tunnel diagnostics (--doctor)...');
+    const { args, env } = containerEnv();
+    const exitCode = await (0, exec_1.exec)('docker', [
+        'run',
+        '--rm',
+        '--network=host',
+        ...args,
+        ...buildMounts(),
+        imageName(),
+        '--doctor',
+        ...buildOptions(false)
+    ], { env, ignoreReturnCode: true });
+    if (exitCode !== 0) {
+        (0, core_1.warning)(`TestingBot Tunnel diagnostics exited with code ${exitCode}`);
+    }
 }
 async function execWithReturn(commandLine, args, extraOptions) {
     let output = '';
@@ -92456,31 +92583,13 @@ const NON_RETRYABLE_PATTERNS = [
 // Exit code 2 is the tunnel's "invalid command-line options" exit code.
 const EXIT_CODE_INVALID_OPTIONS = 2;
 async function startTunnel(workDir) {
-    const containerVersion = (0, core_1.getInput)('tbVersion');
-    const containerName = `testingbot/tunnel:${containerVersion}`;
+    const containerName = imageName();
     await (0, exec_1.exec)('docker', ['pull', containerName]);
-    // Mask credentials and forward them to the container via env vars.
+    // Credentials are masked and forwarded to the container via env vars.
     // The tunnel binary reads TESTINGBOT_KEY / TESTINGBOT_SECRET when no
     // positional credentials are supplied, keeping secrets out of `ps aux`,
     // `docker inspect`, and workflow logs.
-    const key = (0, core_1.getInput)('key', { required: true });
-    const secret = (0, core_1.getInput)('secret', { required: true });
-    (0, core_1.setSecret)(key);
-    (0, core_1.setSecret)(secret);
-    const baseEnv = {};
-    for (const [envKey, envValue] of Object.entries(process.env)) {
-        if (envValue !== undefined) {
-            baseEnv[envKey] = envValue;
-        }
-    }
-    const secretEnv = {
-        TESTINGBOT_KEY: key,
-        TESTINGBOT_SECRET: secret,
-        ...buildSecretEnv()
-    };
-    // `-e NAME` (without a value) makes docker read the value from its own
-    // environment, so secrets never appear on the docker command-line.
-    const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name]);
+    const { args: envArgs, env } = containerEnv();
     // A ready file left over from a previous attempt (or a previous job on a
     // self-hosted runner) would make the tunnel look ready immediately.
     (0, fs_1.rmSync)((0, path_1.join)(workDir, exports.READY_FILE_NAME), { force: true });
@@ -92495,13 +92604,9 @@ async function startTunnel(workDir) {
         ...envArgs,
         '-v',
         `${workDir}:${TMP_DIR_CONTAINER}`,
+        ...buildMounts(),
         containerName
-    ].concat(buildOptions()), {
-        env: {
-            ...baseEnv,
-            ...secretEnv
-        }
-    })).output.trim();
+    ].concat(buildOptions()), { env })).output.trim();
     let hasError = false;
     try {
         await readyPoller(workDir, containerId);
@@ -92559,6 +92664,12 @@ async function run() {
     const workDir = (0, container_1.createWorkDir)();
     // Saved up front so the post step can find the log even if startup fails.
     (0, core_1.saveState)('workDir', workDir);
+    try {
+        await (0, container_1.runDoctor)();
+    }
+    catch (e) {
+        (0, core_1.warning)(`TestingBot Tunnel diagnostics failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
     for (let i = 0;; i++) {
         try {
             const containerId = await (0, container_1.startTunnel)(workDir);
@@ -142209,7 +142320,7 @@ module.exports = /*#__PURE__*/JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('[{"actionOption":"auth","env":"TESTINGBOT_AUTH"},{"actionOption":"debug","dockerOption":"debug","flag":true},{"actionOption":"dns","dockerOption":"dns"},{"actionOption":"doctor","dockerOption":"doctor","flag":true},{"actionOption":"extraHeaders","dockerOption":"extra-headers"},{"actionOption":"fastFailRegexps","dockerOption":"fast-fail-regexps"},{"actionOption":"hubPort","dockerOption":"hubport"},{"actionOption":"metricsPort","dockerOption":"metrics-port"},{"actionOption":"noBump","dockerOption":"nobump","flag":true},{"actionOption":"noCache","dockerOption":"nocache","flag":true},{"actionOption":"noProxy","dockerOption":"noproxy","flag":true},{"actionOption":"pac","dockerOption":"pac"},{"actionOption":"proxy","dockerOption":"proxy"},{"actionOption":"proxyCredentials","env":"TESTINGBOT_PROXY_USERPWD"},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"localProxy","dockerOption":"localproxy"},{"actionOption":"shared","dockerOption":"shared","flag":true},{"actionOption":"tunnelIdentifier","dockerOption":"tunnel-identifier"},{"actionOption":"web","dockerOption":"web"}]');
+module.exports = /*#__PURE__*/JSON.parse('[{"actionOption":"auth","env":"TESTINGBOT_AUTH"},{"actionOption":"debug","dockerOption":"debug","flag":true},{"actionOption":"dns","dockerOption":"dns"},{"actionOption":"extraHeaders","dockerOption":"extra-headers"},{"actionOption":"fastFailRegexps","dockerOption":"fast-fail-regexps"},{"actionOption":"hubPort","dockerOption":"hubport"},{"actionOption":"metricsPort","dockerOption":"metrics-port"},{"actionOption":"noBump","dockerOption":"nobump","flag":true},{"actionOption":"noCache","dockerOption":"nocache","flag":true},{"actionOption":"noProxy","dockerOption":"noproxy","flag":true},{"actionOption":"pac","dockerOption":"pac"},{"actionOption":"proxy","dockerOption":"proxy"},{"actionOption":"proxyCredentials","env":"TESTINGBOT_PROXY_USERPWD"},{"actionOption":"sePort","dockerOption":"se-port"},{"actionOption":"localProxy","dockerOption":"localproxy"},{"actionOption":"shared","dockerOption":"shared","flag":true},{"actionOption":"tunnelIdentifier","dockerOption":"tunnel-identifier"},{"actionOption":"web","dockerOption":"web","path":true},{"actionOption":"allowHosts","dockerOption":"allow-hosts"},{"actionOption":"localhostPolicy","dockerOption":"localhost-policy"},{"actionOption":"pacLocal","dockerOption":"pac-local","path":true},{"actionOption":"pacLocalSha256","dockerOption":"pac-local-sha256"},{"actionOption":"proxyTestingbot","dockerOption":"proxy-testingbot"},{"actionOption":"proxyTestingbotCredentials","env":"TESTINGBOT_PROXY_TESTINGBOT_USERPWD"},{"actionOption":"proxyAuthScheme","dockerOption":"proxy-auth-scheme"},{"actionOption":"cacertFile","dockerOption":"cacert-file","path":true},{"actionOption":"nobumpDomains","dockerOption":"nobump-domains"},{"actionOption":"header","dockerOption":"header","multiple":true},{"actionOption":"responseHeader","dockerOption":"response-header","multiple":true},{"actionOption":"logHttp","dockerOption":"log-http"},{"actionOption":"logFormat","dockerOption":"log-format"},{"actionOption":"sshHostKey","dockerOption":"ssh-host-key"},{"actionOption":"sshHostKeyPolicy","dockerOption":"ssh-host-key-policy"},{"actionOption":"sshConnections","dockerOption":"ssh-connections"},{"actionOption":"metricsAuth","env":"TESTINGBOT_METRICS_AUTH"}]');
 
 /***/ })
 

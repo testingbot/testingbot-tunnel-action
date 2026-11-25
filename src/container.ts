@@ -6,7 +6,7 @@ import {
     rmSync,
     statSync
 } from 'fs'
-import {join} from 'path'
+import {join, resolve as resolvePath} from 'path'
 import {tmpdir} from 'os'
 import {randomBytes} from 'crypto'
 import {getInput, info, isDebug, setSecret, warning} from '@actions/core'
@@ -55,9 +55,16 @@ type OptionMapping = {
     env?: string
     required?: boolean
     flag?: boolean
+    // Multi-line input: every non-empty line becomes its own flag.
+    multiple?: boolean
+    // Value is a path on the runner; it is mounted read-only into the
+    // container at the same absolute path. http(s) URLs are passed as-is.
+    path?: boolean
 }
 
 const optionsMapping: OptionMapping[] = optionsMappingJson
+
+export const DEFAULT_BIND_ADDRESS = '127.0.0.1'
 
 /**
  * Parses a boolean action input. Empty means "not set" (false). Accepts the
@@ -79,28 +86,69 @@ export function parseBooleanInput(name: string, value: string): boolean {
     )
 }
 
-export function buildOptions(): string[] {
+function inputLines(value: string): string[] {
+    return value
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line !== '')
+}
+
+function isUrl(value: string): boolean {
+    return /^https?:\/\//i.test(value)
+}
+
+/**
+ * Resolves a path input against the workspace, so relative paths work the
+ * same way they do for other actions.
+ */
+export function resolveHostPath(value: string): string {
+    return resolvePath(process.env['GITHUB_WORKSPACE'] || process.cwd(), value)
+}
+
+function optionValues(optionMapping: OptionMapping): string[] {
+    const input = getInput(optionMapping.actionOption, {
+        required: optionMapping.required
+    })
+    const values = optionMapping.multiple
+        ? inputLines(input)
+        : input === ''
+          ? []
+          : [input]
+    return optionMapping.path
+        ? values.map(v => (isUrl(v) ? v : resolveHostPath(v)))
+        : values
+}
+
+/**
+ * Builds the tunnel's command-line options from the action inputs.
+ * `withFiles` adds the log and ready file options used for a normal run.
+ */
+export function buildOptions(withFiles = true): string[] {
     const LOG_FILE = join(TMP_DIR_CONTAINER, LOG_FILE_NAME)
     const READY_FILE = join(TMP_DIR_CONTAINER, READY_FILE_NAME)
 
     // Credentials are passed to the tunnel via TESTINGBOT_KEY / TESTINGBOT_SECRET
     // environment variables (see startTunnel), not positional CLI args, so they
     // do not leak into `ps aux` or `docker inspect` command-lines.
-    const params = [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]
+    const params = withFiles
+        ? [`--logfile=${LOG_FILE}`, `--readyfile=${READY_FILE}`]
+        : []
 
     for (const optionMapping of optionsMapping) {
         if (!optionMapping.dockerOption) {
             continue
         }
-        const input = getInput(optionMapping.actionOption, {
-            required: optionMapping.required
-        })
         if (optionMapping.flag) {
+            const input = getInput(optionMapping.actionOption, {
+                required: optionMapping.required
+            })
             if (parseBooleanInput(optionMapping.actionOption, input)) {
                 params.push(`--${optionMapping.dockerOption}`)
             }
-        } else if (input !== '') {
-            params.push(`--${optionMapping.dockerOption}=${input}`)
+            continue
+        }
+        for (const value of optionValues(optionMapping)) {
+            params.push(`--${optionMapping.dockerOption}=${value}`)
         }
     }
 
@@ -108,7 +156,30 @@ export function buildOptions(): string[] {
         params.push('--debug')
     }
 
+    // Escape hatch for tunnel options this action has no input for yet.
+    params.push(...inputLines(getInput('extraArgs')))
+
     return params
+}
+
+/**
+ * Read-only bind mounts for inputs that point at files or directories on the
+ * runner (web, pacLocal, cacertFile). They are mounted at the same absolute
+ * path, so the option value works unchanged inside the container.
+ */
+export function buildMounts(): string[] {
+    const mounts: string[] = []
+    for (const optionMapping of optionsMapping) {
+        if (!optionMapping.path) {
+            continue
+        }
+        for (const value of optionValues(optionMapping)) {
+            if (!isUrl(value)) {
+                mounts.push('-v', `${value}:${value}:ro`)
+            }
+        }
+    }
+    return mounts
 }
 
 /**
@@ -132,6 +203,82 @@ export function buildSecretEnv(): {[key: string]: string} {
         env[optionMapping.env] = input
     }
     return env
+}
+
+/**
+ * Environment for `docker run`: credentials (forwarded by name, so their
+ * values stay off the docker command-line) plus the listener bind address.
+ *
+ * The 5.x image sets TESTINGBOT_BIND_ADDRESS=0.0.0.0. Combined with
+ * --network=host that would expose the unauthenticated Selenium relay (which
+ * attaches the account credentials) and the local proxy to the runner's whole
+ * network, so it is narrowed to loopback unless bindAddress says otherwise.
+ * Passed as an env var rather than --bind-address so 4.x images, which do not
+ * know the option, keep working.
+ */
+function containerEnv(): {args: string[]; env: {[key: string]: string}} {
+    const key = getInput('key', {required: true})
+    const secret = getInput('secret', {required: true})
+    setSecret(key)
+    setSecret(secret)
+
+    const secretEnv: {[key: string]: string} = {
+        TESTINGBOT_KEY: key,
+        TESTINGBOT_SECRET: secret,
+        ...buildSecretEnv()
+    }
+    const bindAddress = getInput('bindAddress').trim() || DEFAULT_BIND_ADDRESS
+
+    const baseEnv: {[key: string]: string} = {}
+    for (const [envKey, envValue] of Object.entries(process.env)) {
+        if (envValue !== undefined) {
+            baseEnv[envKey] = envValue
+        }
+    }
+
+    return {
+        args: [
+            ...Object.keys(secretEnv).flatMap(name => ['-e', name]),
+            '-e',
+            `TESTINGBOT_BIND_ADDRESS=${bindAddress}`
+        ],
+        env: {...baseEnv, ...secretEnv}
+    }
+}
+
+function imageName(): string {
+    return `testingbot/tunnel:${getInput('tbVersion') || 'latest'}`
+}
+
+/**
+ * Runs the tunnel's `--doctor` diagnostics in a one-off container when the
+ * doctor input is set. `--doctor` checks the configuration and exits without
+ * starting a tunnel, so it can't be combined with the real tunnel run.
+ * Diagnostics never fail the step.
+ */
+export async function runDoctor(): Promise<void> {
+    if (!parseBooleanInput('doctor', getInput('doctor'))) {
+        return
+    }
+    info('Running TestingBot Tunnel diagnostics (--doctor)...')
+    const {args, env} = containerEnv()
+    const exitCode = await exec(
+        'docker',
+        [
+            'run',
+            '--rm',
+            '--network=host',
+            ...args,
+            ...buildMounts(),
+            imageName(),
+            '--doctor',
+            ...buildOptions(false)
+        ],
+        {env, ignoreReturnCode: true}
+    )
+    if (exitCode !== 0) {
+        warning(`TestingBot Tunnel diagnostics exited with code ${exitCode}`)
+    }
 }
 
 type ContainerState = {running: boolean; exitCode?: number}
@@ -333,34 +480,14 @@ const NON_RETRYABLE_PATTERNS = [
 const EXIT_CODE_INVALID_OPTIONS = 2
 
 export async function startTunnel(workDir: string): Promise<string> {
-    const containerVersion = getInput('tbVersion')
-    const containerName = `testingbot/tunnel:${containerVersion}`
+    const containerName = imageName()
     await exec('docker', ['pull', containerName])
 
-    // Mask credentials and forward them to the container via env vars.
+    // Credentials are masked and forwarded to the container via env vars.
     // The tunnel binary reads TESTINGBOT_KEY / TESTINGBOT_SECRET when no
     // positional credentials are supplied, keeping secrets out of `ps aux`,
     // `docker inspect`, and workflow logs.
-    const key = getInput('key', {required: true})
-    const secret = getInput('secret', {required: true})
-    setSecret(key)
-    setSecret(secret)
-
-    const baseEnv: {[key: string]: string} = {}
-    for (const [envKey, envValue] of Object.entries(process.env)) {
-        if (envValue !== undefined) {
-            baseEnv[envKey] = envValue
-        }
-    }
-
-    const secretEnv: {[key: string]: string} = {
-        TESTINGBOT_KEY: key,
-        TESTINGBOT_SECRET: secret,
-        ...buildSecretEnv()
-    }
-    // `-e NAME` (without a value) makes docker read the value from its own
-    // environment, so secrets never appear on the docker command-line.
-    const envArgs = Object.keys(secretEnv).flatMap(name => ['-e', name])
+    const {args: envArgs, env} = containerEnv()
 
     // A ready file left over from a previous attempt (or a previous job on a
     // self-hosted runner) would make the tunnel look ready immediately.
@@ -380,14 +507,10 @@ export async function startTunnel(workDir: string): Promise<string> {
                 ...envArgs,
                 '-v',
                 `${workDir}:${TMP_DIR_CONTAINER}`,
+                ...buildMounts(),
                 containerName
             ].concat(buildOptions()),
-            {
-                env: {
-                    ...baseEnv,
-                    ...secretEnv
-                }
-            }
+            {env}
         )
     ).output.trim()
 

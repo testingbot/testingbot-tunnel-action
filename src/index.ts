@@ -3,6 +3,7 @@ import {
     createWorkDir,
     logFilePath,
     NonRetryableError,
+    runDoctor,
     startTunnel
 } from './container'
 
@@ -18,6 +19,16 @@ export async function run(): Promise<void> {
     const workDir = createWorkDir()
     // Saved up front so the post step can find the log even if startup fails.
     saveState('workDir', workDir)
+
+    try {
+        await runDoctor()
+    } catch (e) {
+        warning(
+            `TestingBot Tunnel diagnostics failed: ${
+                e instanceof Error ? e.message : String(e)
+            }`
+        )
+    }
 
     for (let i = 0; ; i++) {
         try {
