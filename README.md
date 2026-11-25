@@ -20,7 +20,7 @@ jobs:
         name: Action Test
         steps:
             # ...
-            - uses: testingbot/testingbot-tunnel-action@v2
+            - uses: testingbot/testingbot-tunnel-action@v3
               with:
                   key: ${{ secrets.TB_KEY }}
                   secret: ${{ secrets.TB_SECRET }}
@@ -28,6 +28,13 @@ jobs:
                   tbVersion: '5.1'
             # ...
 ```
+
+## Upgrading from v2
+
+- **The tunnel's local listeners bind to `127.0.0.1`.** Tests on the runner itself work unchanged. If your tests run in a service container or on another host, set `bindAddress: 0.0.0.0`; see [Network exposure](#network-exposure) first.
+- **Boolean inputs must be `true` or `false`.** Values like `yes` used to switch the option on; they now fail the step. `shared: false` (and the same for the other flags) now really turns the option off.
+- **`auth` and `proxyCredentials` are passed as environment variables**, so they stay out of `docker inspect` and the log. That needs tunnel image 4.8 or newer, so check `tbVersion` if you pin an older one.
+- **The work directory is new for each run.** It's created under `RUNNER_TEMP` instead of being shared. Use the `log-file` output instead of a hard-coded log path.
 
 ## Inputs
 
@@ -130,7 +137,7 @@ strategy:
     matrix:
         browser: [chrome, firefox]
 steps:
-    - uses: testingbot/testingbot-tunnel-action@v2
+    - uses: testingbot/testingbot-tunnel-action@v3
       with:
           key: ${{ secrets.TB_KEY }}
           secret: ${{ secrets.TB_SECRET }}
@@ -153,7 +160,7 @@ The tunnel identifier (echoed from the `tunnelIdentifier` input).
 Absolute path to the tunnel log file on the runner. Useful for piping into `actions/upload-artifact` in your own workflow:
 
 ```yaml
-- uses: testingbot/testingbot-tunnel-action@v2
+- uses: testingbot/testingbot-tunnel-action@v3
   id: tunnel
   with:
     key: ${{ secrets.TB_KEY }}
