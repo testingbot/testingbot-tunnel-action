@@ -50,8 +50,12 @@ export async function run(): Promise<void> {
 
     for (let i = 0; ; i++) {
         try {
-            const containerId = await startTunnel(workDir)
-            toolkit.saveState('containerId', containerId)
+            // The container ID is saved as soon as the container exists, not
+            // once it is ready: if the job is cancelled while the tunnel is
+            // starting, the post step still finds and removes the container.
+            const containerId = await startTunnel(workDir, id =>
+                toolkit.saveState('containerId', id)
+            )
             toolkit.setOutput('container-id', containerId)
             toolkit.setOutput(
                 'tunnel-identifier',

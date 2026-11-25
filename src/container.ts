@@ -467,7 +467,18 @@ const NON_RETRYABLE_PATTERNS = [
 // Exit code 2 is the tunnel's "invalid command-line options" exit code.
 const EXIT_CODE_INVALID_OPTIONS = 2
 
-export async function startTunnel(workDir: string): Promise<string> {
+/**
+ * Starts the tunnel container and waits until it is ready.
+ *
+ * `onContainerStarted` is called with the container ID as soon as
+ * `docker run` returns, before waiting for readiness. The caller saves it so
+ * the post step can remove the container even if the job is cancelled while
+ * the tunnel is still starting.
+ */
+export async function startTunnel(
+    workDir: string,
+    onContainerStarted: (containerId: string) => void = () => {}
+): Promise<string> {
     const containerName = imageName()
     await toolkit.exec('docker', ['pull', containerName])
 
@@ -501,6 +512,7 @@ export async function startTunnel(workDir: string): Promise<string> {
             {env}
         )
     ).output.trim()
+    onContainerStarted(containerId)
 
     let hasError = false
     try {
