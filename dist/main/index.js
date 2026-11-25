@@ -114339,7 +114339,8 @@ var NON_RETRYABLE_PATTERNS = [
   /Missing required arguments API_KEY API_SECRET/
 ];
 var EXIT_CODE_INVALID_OPTIONS = 2;
-async function startTunnel(workDir) {
+async function startTunnel(workDir, onContainerStarted = () => {
+}) {
   const containerName = imageName();
   await toolkit.exec("docker", ["pull", containerName]);
   const { args: envArgs, env } = containerEnv();
@@ -114359,6 +114360,7 @@ async function startTunnel(workDir) {
     ].concat(buildOptions2()),
     { env }
   )).output.trim();
+  onContainerStarted(containerId);
   let hasError = false;
   try {
     await readyPoller(workDir, containerId);
@@ -114426,8 +114428,10 @@ async function run() {
   }
   for (let i = 0; ; i++) {
     try {
-      const containerId = await startTunnel(workDir);
-      toolkit.saveState("containerId", containerId);
+      const containerId = await startTunnel(
+        workDir,
+        (id) => toolkit.saveState("containerId", id)
+      );
       toolkit.setOutput("container-id", containerId);
       toolkit.setOutput(
         "tunnel-identifier",

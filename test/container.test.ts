@@ -733,6 +733,19 @@ describe('startTunnel', () => {
         assert.equal(runOpts.env.TESTINGBOT_SECRET, 'my-secret')
     })
 
+    it('reports the container ID before waiting for readiness', async () => {
+        const started: string[] = []
+        fakeDocker(execStub, {
+            // Never becomes ready: the container exits right away.
+            run: () => ({stdout: 'container-early\n'}),
+            inspect: () => ({stdout: 'false 1\n'})
+        })
+
+        await assert.rejects(() => startTunnel(workDir, id => started.push(id)))
+
+        assert.deepEqual(started, ['container-early'])
+    })
+
     it('binds the tunnel listeners to loopback by default', async () => {
         fakeDocker(execStub, readyOnRun('container-id-6'))
 

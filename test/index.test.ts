@@ -5,6 +5,17 @@ import {toolkit} from '../src/toolkit'
 import * as container from '../src/container'
 import {run, retryDelays} from '../src/index'
 
+// Fake startTunnel that reports the container as started, like the real one.
+function startsContainer(id: string) {
+    return async (
+        _workDir: string,
+        onContainerStarted?: (containerId: string) => void
+    ): Promise<string> => {
+        onContainerStarted?.(id)
+        return id
+    }
+}
+
 describe('index.run', () => {
     let getInputStub: sinon.SinonStub
     let saveStateStub: sinon.SinonStub
@@ -31,7 +42,7 @@ describe('index.run', () => {
     it('saves container ID and exposes outputs on first-attempt success', async () => {
         getInputStub.withArgs('retryTimeout').returns('10')
         getInputStub.withArgs('tunnelIdentifier').returns('my-tunnel')
-        startTunnelStub.resolves('container-abc')
+        startTunnelStub.callsFake(startsContainer('container-abc'))
 
         await run()
 
@@ -58,7 +69,9 @@ describe('index.run', () => {
 
         try {
             startTunnelStub.onFirstCall().rejects(new Error('first fail'))
-            startTunnelStub.onSecondCall().resolves('container-xyz')
+            startTunnelStub
+                .onSecondCall()
+                .callsFake(startsContainer('container-xyz'))
 
             await run()
 
@@ -93,7 +106,7 @@ describe('index.run', () => {
 
     it('defaults retryTimeout to 10 when input is empty or non-numeric', async () => {
         getInputStub.withArgs('retryTimeout').returns('not-a-number')
-        startTunnelStub.resolves('ok')
+        startTunnelStub.callsFake(startsContainer('ok'))
 
         // Should not throw; just complete normally using the default.
         await run()
@@ -104,7 +117,7 @@ describe('index.run', () => {
     it('runs diagnostics once before starting, and survives a doctor failure', async () => {
         getInputStub.withArgs('retryTimeout').returns('10')
         runDoctorStub.rejects(new Error('doctor broke'))
-        startTunnelStub.resolves('container-abc')
+        startTunnelStub.callsFake(startsContainer('container-abc'))
 
         await run()
 
@@ -121,6 +134,26 @@ describe('index.run', () => {
 
         assert.ok(startTunnelStub.calledOnce)
         assert.ok(!saveStateStub.calledWith('containerId', sinon.match.any))
+    })
+
+    it('saves the container ID before the tunnel is ready', async () => {
+        getInputStub.withArgs('retryTimeout').returns('10')
+        // Container started, but readiness failed with a fatal error: the ID
+        // must still be in state so the post step can remove the container.
+        startTunnelStub.callsFake(
+            async (
+                _workDir: string,
+                onContainerStarted: (containerId: string) => void
+            ) => {
+                onContainerStarted('container-starting')
+                throw new container.NonRetryableError('bad options')
+            }
+        )
+
+        await assert.rejects(() => run(), {message: 'bad options'})
+
+        assert.ok(saveStateStub.calledWith('containerId', 'container-starting'))
+        assert.ok(!setOutputStub.calledWith('container-id', sinon.match.any))
     })
 
     for (const name of ['key', 'secret']) {
