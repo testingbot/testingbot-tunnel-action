@@ -12,3 +12,6 @@ test-build/
 
 # Logs
 *.log
+
+# Tooling
+.serena/

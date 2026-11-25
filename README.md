@@ -158,7 +158,7 @@ Absolute path to the tunnel log file on the runner. Useful for piping into `acti
     secret: ${{ secrets.TB_SECRET }}
 
 - if: always()
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: tunnel-log
     path: ${{ steps.tunnel.outputs.log-file }}
